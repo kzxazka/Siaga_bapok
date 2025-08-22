@@ -63,21 +63,30 @@ class User {
     }
     
     public function getAll($role = null) {
-        $sql = "SELECT id, username, email, full_name, role, market_assigned, is_active, created_at FROM users";
+        $sql = "SELECT u.id, u.username, u.email, u.full_name, u.role, 
+                       u.market_assigned, u.is_active, u.created_at,
+                       ps.nama_pasar AS market_name
+                FROM users u
+                LEFT JOIN pasar ps ON u.market_assigned = ps.id_pasar";
         $params = [];
         
         if ($role) {
-            $sql .= " WHERE role = ?";
+            $sql .= " WHERE u.role = ?";
             $params[] = $role;
         }
         
-        $sql .= " ORDER BY created_at DESC";
+        $sql .= " ORDER BY u.created_at DESC";
         
         return $this->db->fetchAll($sql, $params);
     }
     
     public function getById($id) {
-        $sql = "SELECT id, username, email, full_name, role, market_assigned, is_active, created_at FROM users WHERE id = ?";
+        $sql = "SELECT u.id, u.username, u.email, u.full_name, u.role, 
+                       u.market_assigned, u.is_active, u.created_at,
+                       ps.nama_pasar AS market_name
+                FROM users u
+                LEFT JOIN pasar ps ON u.market_assigned = ps.id_pasar
+                WHERE u.id = ?";
         return $this->db->fetchOne($sql, [$id]);
     }
     
@@ -134,7 +143,12 @@ class User {
     }
     
     public function getUptdUsers() {
-        $sql = "SELECT id, username, full_name, market_assigned FROM users WHERE role = 'uptd' AND is_active = 1 ORDER BY full_name";
+        $sql = "SELECT u.id, u.username, u.full_name, u.market_assigned,
+                       ps.nama_pasar AS market_name
+                FROM users u
+                LEFT JOIN pasar ps ON u.market_assigned = ps.id_pasar
+                WHERE u.role = 'uptd' AND u.is_active = 1 
+                ORDER BY u.full_name";
         return $this->db->fetchAll($sql);
     }
     
@@ -145,6 +159,11 @@ class User {
                     SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_count
                 FROM users 
                 GROUP BY role";
+        return $this->db->fetchAll($sql);
+    }
+    
+    public function getMarketList() {
+        $sql = "SELECT id_pasar, nama_pasar FROM pasar ORDER BY nama_pasar";
         return $this->db->fetchAll($sql);
     }
 }

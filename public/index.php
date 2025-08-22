@@ -13,13 +13,12 @@ $priceModel = new Price();
 $db = new Database();
 $commodities = $db->fetchAll("
     SELECT DISTINCT c.id, c.name, c.unit
-    FROM prices p
-    JOIN commodities c ON p.commodity_id = c.id
+    FROM commodities c
     ORDER BY c.name ASC
 ");
 
 // Ambil daftar pasar (untuk admin)
-$markets = $db->fetchAll("SELECT DISTINCT id_pasar FROM prices ORDER BY id_pasar ASC");
+$markets = $db->fetchAll("SELECT id_pasar, nama_pasar FROM pasar ORDER BY nama_pasar ASC");
 
 // Untuk UPTD, ambil pasar yang ditugaskan
 $marketAssigned = null;
@@ -56,13 +55,13 @@ $pricesByMarket = $priceModel->getPricesByMarketAndDateRange($referenceDate, $co
 
 // Get latest prices
 $latestPrices = $db->fetchAll("
-    SELECT p.id, p.price, p.market_assigned, p.created_at, c.name AS commodity_name, c.unit
+    SELECT p.id, p.price, ps.nama_pasar AS market_name, p.created_at, c.name AS commodity_name, c.unit
     FROM prices p
     JOIN commodities c ON p.commodity_id = c.id
+    JOIN pasar ps ON p.market_id = ps.id_pasar
     ORDER BY p.created_at DESC
     LIMIT 50
 ");
-
 
 // Get top increasing prices (7 days)
 $topIncreasing = $priceModel->getTopIncreasingPrices(7, 5);

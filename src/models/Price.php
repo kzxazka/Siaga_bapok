@@ -9,13 +9,13 @@ class Price {
     }
     
     public function create($data) {
-        $sql = "INSERT INTO prices (commodity_id, price, market_name, uptd_user_id, notes) 
+        $sql = "INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, notes) 
                 VALUES (?, ?, ?, ?, ?)";
         
         return $this->db->execute($sql, [
             $data['commodity_id'],
             $data['price'],
-            $data['market_name'],
+            $data['market_id'],
             $data['uptd_user_id'],
             $data['notes'] ?? null
         ]);
@@ -23,9 +23,11 @@ class Price {
     
     public function getAll($status = null, $limit = null) {
         $sql = "SELECT p.*, c.name AS commodity_name, c.unit,
+                       ps.nama_pasar AS market_name,
                        u.full_name as uptd_name, admin.full_name as approved_by_name 
                 FROM prices p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 JOIN users u ON p.uptd_user_id = u.id 
                 LEFT JOIN users admin ON p.approved_by = admin.id";
         
@@ -48,9 +50,11 @@ class Price {
     
     public function getById($id) {
         $sql = "SELECT p.*, c.name AS commodity_name, c.unit,
+                       ps.nama_pasar AS market_name,
                        u.full_name as uptd_name, admin.full_name as approved_by_name 
                 FROM prices p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 JOIN users u ON p.uptd_user_id = u.id 
                 LEFT JOIN users admin ON p.approved_by = admin.id 
                 WHERE p.id = ?";
@@ -60,9 +64,11 @@ class Price {
     
     public function getByUptd($uptdId, $status = null) {
         $sql = "SELECT p.*, c.name AS commodity_name, c.unit,
+                       ps.nama_pasar AS market_name,
                        u.full_name as uptd_name 
                 FROM prices p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 JOIN users u ON p.uptd_user_id = u.id 
                 WHERE p.uptd_user_id = ?";
         
@@ -90,13 +96,13 @@ class Price {
     
     public function update($id, $data) {
         $sql = "UPDATE prices 
-                SET commodity_id = ?, price = ?, market_name = ?, notes = ? 
+                SET commodity_id = ?, price = ?, market_id = ?, notes = ? 
                 WHERE id = ?";
         
         return $this->db->execute($sql, [
             $data['commodity_id'],
             $data['price'],
-            $data['market_name'],
+            $data['market_id'],
             $data['notes'] ?? null,
             $id
         ]);
@@ -108,9 +114,11 @@ class Price {
     }
     
     public function getApprovedPrices($days = 30) {
-        $sql = "SELECT p.*, c.name AS commodity_name, c.unit
+        $sql = "SELECT p.*, c.name AS commodity_name, c.unit,
+                       ps.nama_pasar AS market_name
                 FROM prices p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 WHERE p.status = 'approved' 
                 AND p.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) 
                 ORDER BY p.created_at DESC";
@@ -139,29 +147,31 @@ class Price {
     
     public function getLatestPrices() {
         $sql = "SELECT c.name AS commodity_name, c.unit,
-                       p.market_name, p.price, p.created_at
+                       ps.nama_pasar AS market_name, p.price, p.created_at
                 FROM (
                     SELECT *,
-                           ROW_NUMBER() OVER (PARTITION BY commodity_id, market_name ORDER BY created_at DESC) as rn
+                           ROW_NUMBER() OVER (PARTITION BY commodity_id, market_id ORDER BY created_at DESC) as rn
                     FROM prices 
                     WHERE status = 'approved'
                 ) p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 WHERE p.rn = 1
-                ORDER BY c.name, p.market_name";
+                ORDER BY c.name, ps.nama_pasar";
         
         return $this->db->fetchAll($sql);
     }
     
     public function getPriceComparison($commodityId, $days = 7) {
         $sql = "SELECT 
-                    p.market_name, p.price, p.created_at,
+                    ps.nama_pasar AS market_name, p.price, p.created_at,
                     c.name AS commodity_name, c.unit
                 FROM prices p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 WHERE p.commodity_id = ? AND p.status = 'approved' 
                 AND p.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-                ORDER BY p.created_at DESC, p.market_name";
+                ORDER BY p.created_at DESC, ps.nama_pasar";
         
         return $this->db->fetchAll($sql, [$commodityId, $days]);
     }
@@ -192,7 +202,7 @@ class Price {
                     COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
                     COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
                     COUNT(DISTINCT commodity_id) as total_commodities,
-                    COUNT(DISTINCT market_name) as total_markets
+                    COUNT(DISTINCT market_id) as total_markets
                 FROM prices";
         
         return $this->db->fetchOne($sql);
@@ -208,18 +218,21 @@ class Price {
     }
     
     public function getMarketList() {
-        $sql = "SELECT DISTINCT market_name 
-                FROM prices 
-                WHERE status = 'approved' 
-                ORDER BY market_name";
+        $sql = "SELECT DISTINCT ps.id_pasar, ps.nama_pasar AS market_name
+                FROM prices p
+                JOIN pasar ps ON p.market_id = ps.id_pasar
+                WHERE p.status = 'approved' 
+                ORDER BY ps.nama_pasar";
         return $this->db->fetchAll($sql);
     }
     
     public function searchPrices($filters) {
         $sql = "SELECT p.*, c.name AS commodity_name, c.unit,
+                       ps.nama_pasar AS market_name,
                        u.full_name as uptd_name 
                 FROM prices p 
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 JOIN users u ON p.uptd_user_id = u.id 
                 WHERE p.status = 'approved'";
         
@@ -231,7 +244,7 @@ class Price {
         }
         
         if (!empty($filters['market'])) {
-            $sql .= " AND p.market_name = ?";
+            $sql .= " AND ps.nama_pasar = ?";
             $params[] = $filters['market'];
         }
         
@@ -290,11 +303,12 @@ class Price {
         
         $sql = "SELECT 
                     c.name AS commodity_name, c.unit,
-                    p.market_name,
+                    ps.nama_pasar AS market_name,
                     AVG(p.price) as avg_price,
                     DATE(p.created_at) as price_date
                 FROM prices p
                 JOIN commodities c ON p.commodity_id = c.id
+                JOIN pasar ps ON p.market_id = ps.id_pasar
                 WHERE p.status = 'approved'
                 AND DATE(p.created_at) BETWEEN ? AND ?";
         
@@ -305,8 +319,8 @@ class Price {
             $params[] = $uptdId;
         }
         
-        $sql .= " GROUP BY c.name, p.market_name, DATE(p.created_at)
-          ORDER BY c.name, p.market_name, MAX(p.created_at)";
+        $sql .= " GROUP BY c.name, ps.nama_pasar, DATE(p.created_at)
+          ORDER BY c.name, ps.nama_pasar, MAX(p.created_at)";
         
         return $this->db->fetchAll($sql, $params);
     }

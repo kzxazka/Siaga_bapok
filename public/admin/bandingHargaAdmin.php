@@ -49,7 +49,7 @@ function getPrice($db, $commodityId, $date, $marketId) {
                 JOIN commodities c ON p.commodity_id = c.id
                 WHERE p.commodity_id = ? 
                   AND DATE(p.created_at) = ? 
-                  AND p.id_pasar = ?";
+                  AND p.market_id = ?";
         $params = [$commodityId, $date, $marketId];
     }
     $row = $db->fetchOne($sql, $params);

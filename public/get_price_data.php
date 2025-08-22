@@ -25,9 +25,9 @@ $role = $currentUser ? $currentUser['role'] : 'masyarakat';
 // --- Query ---
 $db = new Database();
 $params = [];
-$where = "commodity_name = ?";
+$where = "c.name = ?";
 $params[] = $commodity;
-$where .= " AND DATE(created_at) BETWEEN ? AND ?";
+$where .= " AND DATE(p.created_at) BETWEEN ? AND ?";
 $params[] = $start_date;
 $params[] = $end_date;
 
@@ -36,30 +36,34 @@ if ($role === 'uptd') {
     $userId = $currentUser['id'];
     $user = $db->fetchOne("SELECT market_assigned FROM users WHERE id = ?", [$userId]);
     if ($user && $user['market_assigned']) {
-        $where .= " AND market_name = ?";
+        $where .= " AND ps.id_pasar = ?";
         $params[] = $user['market_assigned'];
     }
 } elseif ($role === 'admin' && $market !== 'all') {
-    $where .= " AND market_name = ?";
+    $where .= " AND ps.nama_pasar = ?";
     $params[] = $market;
 }
 
 // --- Grafik: harga rata-rata per tanggal ---
 $chartRows = $db->fetchAll(
-    "SELECT DATE(created_at) as date, AVG(price) as avg_price
-     FROM prices
+    "SELECT DATE(p.created_at) as date, AVG(p.price) as avg_price
+     FROM prices p
+     JOIN commodities c ON p.commodity_id = c.id
+     JOIN pasar ps ON p.market_id = ps.id_pasar
      WHERE $where
-     GROUP BY DATE(created_at)
-     ORDER BY DATE(created_at) ASC",
+     GROUP BY DATE(p.created_at)
+     ORDER BY DATE(p.created_at) ASC",
     $params
 );
 
 // --- Tabel: semua baris sesuai filter ---
 $tableRows = $db->fetchAll(
-    "SELECT market_name, price, DATE(created_at) as date
-     FROM prices
+    "SELECT ps.nama_pasar AS market_name, p.price, DATE(p.created_at) as date
+     FROM prices p
+     JOIN commodities c ON p.commodity_id = c.id
+     JOIN pasar ps ON p.market_id = ps.id_pasar
      WHERE $where
-     ORDER BY DATE(created_at) ASC, market_name ASC",
+     ORDER BY DATE(p.created_at) ASC, ps.nama_pasar ASC",
     $params
 );
 

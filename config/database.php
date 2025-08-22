@@ -8,7 +8,7 @@ class Database {
     private $host = 'localhost';
     private $username = 'root';
     private $password = '';
-    private $database = 'cursorbapok';
+    private $database = 'siagabapok_db';
     private $charset = 'utf8mb4';
     private $pdo;
     

@@ -35,15 +35,15 @@ if (!empty($user['market_assigned'])) {
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $commodity_name = sanitizeInput($_POST['commodity_name']);
+    $commodity_id = (int) $_POST['commodity_id'];
     $price = sanitizeInput($_POST['price']);
     $notes = sanitizeInput($_POST['notes'] ?? '');
     
     $errors = [];
     
     // Validation
-    if (empty($commodity_name)) {
-        $errors[] = 'Nama komoditas harus diisi';
+    if (empty($commodity_id)) {
+        $errors[] = 'Komoditas harus dipilih';
     }
     
     if (empty($price)) {
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if (empty($errors)) {
         $data = [
-            'commodity_name' => $commodity_name,
+            'commodity_id' => $commodity_id,
             'price' => $price,
             'market_id' => $marketId, // ✅ simpan ID pasar, lebih aman
             'uptd_user_id' => $user['id'],
@@ -512,7 +512,7 @@ $pageTitle = 'Dashboard UPTD - Siaga Bapok';
         // Form validation
         document.getElementById('priceForm').addEventListener('submit', function(e) {
             const price = document.getElementById('price').value;
-            const commodity = document.getElementById('commodity_name').value;
+            const commodity = document.getElementById('commodity_id').value;
             
             if (!commodity) {
                 e.preventDefault();

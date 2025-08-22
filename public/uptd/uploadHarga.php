@@ -20,24 +20,19 @@ if (!isset($_SESSION['role'])) {
     exit;
 }
 
-
-// Ambil data pasar & komoditas
-$markets = $db->fetchAll("SELECT nama_pasar FROM pasar ORDER BY nama_pasar");
-$commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY name");
-
 // Handle input harga (untuk UPTD saja)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $role === 'uptd') {
     $commodityId = (int) $_POST['commodity_id'];
     $price = (float) $_POST['price'];
-    $market = trim($_POST['market_name']);
+    $marketId = (int) $_POST['market_id'];
     $notes = trim($_POST['notes'] ?? '');
     $uptdId = $_SESSION['user_id'];
 
     try {
         $db->execute(
-                "INSERT INTO prices (commodity_id, price, market_name, uptd_user_id, notes, status)
+                "INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, notes, status)
                 VALUES (?, ?, ?, ?, ?, 'pending')",
-                [$commodityId, $price, $market, $uptdId, $notes]
+                [$commodityId, $price, $marketId, $uptdId, $notes]
             );
         $_SESSION['success'] = "Harga berhasil diinput dan menunggu persetujuan admin.";
     } catch (Exception $e) {
@@ -59,6 +54,34 @@ if ($role === 'uptd') {
     $markets = $db->fetchAll("SELECT id_pasar, nama_pasar FROM pasar ORDER BY nama_pasar");
 }
 $commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY name");
+
+// Get prices data
+if ($role === 'uptd') {
+    $prices = $db->fetchAll("
+        SELECT p.id, p.price, p.status, p.created_at, p.notes,
+               c.name AS commodity_name, c.unit,
+               ps.nama_pasar AS market_name,
+               u.full_name as uptd_name
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        JOIN users u ON p.uptd_user_id = u.id
+        WHERE p.uptd_user_id = ?
+        ORDER BY p.created_at DESC
+    ", [$_SESSION['user_id']]);
+} else {
+    $prices = $db->fetchAll("
+        SELECT p.id, p.price, p.status, p.created_at, p.notes,
+               c.name AS commodity_name, c.unit,
+               ps.nama_pasar AS market_name,
+               u.full_name as uptd_name
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        JOIN users u ON p.uptd_user_id = u.id
+        ORDER BY p.created_at DESC
+    ");
+}
 ?>
 
 <!DOCTYPE html>
@@ -205,10 +228,10 @@ $commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY na
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Pilih Pasar</label>
-                            <select name="market_name" class="form-select" required>
+                            <select name="market_id" class="form-select" required>
                             <option value="" selected disabled>-- Pilih --</option>
                             <?php foreach ($markets as $m): ?>
-                                <option value="<?= htmlspecialchars($m['nama_pasar']) ?>">
+                                <option value="<?= $m['id_pasar'] ?>">
                                     <?= htmlspecialchars($m['nama_pasar']) ?>
                                 </option>
                             <?php endforeach; ?>
