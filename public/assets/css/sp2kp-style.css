@@ -1,0 +1,247 @@
+/* 
+ * SP2KP Style CSS untuk SiagaBapok
+ * Gaya visual yang terinspirasi dari SP2KP untuk grafik dan tabel harga
+ */
+
+/* Warna indikator perubahan harga */
+:root {
+    --naik-tinggi: #dc3545; /* Merah tua untuk kenaikan >5% */
+    --naik-rendah: #fd7e14; /* Oranye untuk kenaikan 0-5% */
+    --tetap: #0d6efd;       /* Biru untuk harga tetap */
+    --turun-rendah: #20c997; /* Hijau muda untuk penurunan 0-5% */
+    --turun-tinggi: #198754; /* Hijau tua untuk penurunan >5% */
+    --tidak-ada: #6c757d;   /* Abu-abu untuk tidak ada perbandingan */
+}
+
+/* Grafik Tren Harga */
+.sp2kp-chart-container {
+    position: relative;
+    height: 400px;
+    margin-bottom: 2rem;
+    background-color: #fff;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    padding: 1rem;
+}
+
+.sp2kp-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+}
+
+.sp2kp-legend-item {
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+}
+
+.sp2kp-legend-color {
+    width: 1rem;
+    height: 1rem;
+    margin-right: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+/* Warna untuk legend */
+.sp2kp-legend-naik-tinggi { background-color: var(--naik-tinggi); }
+.sp2kp-legend-naik-rendah { background-color: var(--naik-rendah); }
+.sp2kp-legend-tetap { background-color: var(--tetap); }
+.sp2kp-legend-turun-rendah { background-color: var(--turun-rendah); }
+.sp2kp-legend-turun-tinggi { background-color: var(--turun-tinggi); }
+.sp2kp-legend-tidak-ada { background-color: var(--tidak-ada); }
+
+/* Tabel Harga */
+.sp2kp-price-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    background-color: #fff;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.sp2kp-price-table th,
+.sp2kp-price-table td {
+    padding: 0.75rem;
+    text-align: center;
+    border: 1px solid #dee2e6;
+    white-space: nowrap;
+}
+
+.sp2kp-price-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.sp2kp-price-table thead th {
+    background-color: #343a40;
+    color: #fff;
+}
+
+.sp2kp-price-table tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.sp2kp-price-table tbody tr:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Indikator perubahan harga */
+.sp2kp-price-change {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.sp2kp-price-naik-tinggi { background-color: var(--naik-tinggi); }
+.sp2kp-price-naik-rendah { background-color: var(--naik-rendah); }
+.sp2kp-price-tetap { background-color: var(--tetap); }
+.sp2kp-price-turun-rendah { background-color: var(--turun-rendah); }
+.sp2kp-price-turun-tinggi { background-color: var(--turun-tinggi); }
+.sp2kp-price-tidak-ada { background-color: var(--tidak-ada); }
+
+/* Tooltip untuk grafik */
+.sp2kp-tooltip {
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    z-index: 1000;
+}
+
+/* Kontrol filter */
+.sp2kp-filter-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+/* Tombol export */
+.sp2kp-export-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.sp2kp-export-buttons .btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Responsif untuk mobile */
+@media (max-width: 768px) {
+    .sp2kp-chart-container {
+        height: 300px;
+    }
+    
+    .sp2kp-filter-controls {
+        flex-direction: column;
+    }
+    
+    .sp2kp-price-table {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .sp2kp-chart-legend {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .sp2kp-legend-item {
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Responsif untuk layar sangat kecil */
+@media (max-width: 360px) {
+    .sp2kp-chart-container {
+        height: 250px;
+        padding: 0.5rem;
+    }
+    
+    .container {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+    
+    .card-body {
+        padding: 0.75rem;
+    }
+    
+    h1, .h1 {
+        font-size: 1.5rem;
+    }
+    
+    h2, .h2 {
+        font-size: 1.25rem;
+    }
+    
+    .btn {
+        padding: 0.375rem 0.5rem;
+    }
+    
+    .table-responsive {
+        margin-bottom: 1rem;
+    }
+}
+
+/* Print styles */
+@media print {
+    .sp2kp-chart-container {
+        height: 300px;
+        page-break-inside: avoid;
+        margin: 0;
+        box-shadow: none;
+    }
+    
+    .sp2kp-price-table {
+        page-break-inside: avoid;
+        box-shadow: none;
+    }
+    
+    .sp2kp-filter-controls,
+    .sp2kp-export-buttons,
+    .navbar,
+    .footer,
+    .sidebar,
+    .no-print {
+        display: none !important;
+    }
+    
+    .container {
+        width: 100%;
+        max-width: 100%;
+        padding: 0;
+        margin: 0;
+    }
+    
+    body {
+        padding: 0;
+        margin: 0;
+    }
+    
+    /* Orientasi landscape untuk grafik */
+    @page {
+        size: landscape;
+    }
+}
