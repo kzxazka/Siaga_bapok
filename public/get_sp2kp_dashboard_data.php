@@ -39,18 +39,20 @@ try {
     if ($role === 'uptd' && $currentUser) {
         $userInfo = $db->fetchOne("SELECT market_assigned FROM users WHERE id = ?", [$currentUser['id']]);
         if ($userInfo && $userInfo['market_assigned']) {
-            $marketCondition = ' AND market_name = ?';
+            $marketCondition = ' AND ps.id_pasar = ?';
             $params[] = $userInfo['market_assigned'];
         }
     }
 
     // Query untuk mendapatkan daftar komoditas unik
     $commoditiesQuery = "
-        SELECT DISTINCT commodity_name 
-        FROM prices 
-        WHERE status = 'approved' 
+        SELECT DISTINCT c.name AS commodity_name 
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        WHERE p.status = 'approved' 
         {$marketCondition}
-        ORDER BY commodity_name ASC
+        ORDER BY c.name ASC
     ";
     
     $commodityList = $db->fetchAll($commoditiesQuery, $params);
@@ -61,9 +63,10 @@ try {
 
     // Hitung total pasar
     $marketCountQuery = "
-        SELECT COUNT(DISTINCT market_name) as total 
-        FROM prices 
-        WHERE status = 'approved'
+        SELECT COUNT(DISTINCT ps.id_pasar) as total 
+        FROM prices p
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        WHERE p.status = 'approved'
         {$marketCondition}
     ";
     $marketCount = $db->fetchOne($marketCountQuery, $params);
@@ -85,11 +88,13 @@ try {
         
         // 1. Harga rata-rata periode saat ini
         $currentQuery = "
-            SELECT AVG(price) as avg_price
-            FROM prices 
-            WHERE commodity_name = ? 
-            AND status = 'approved'
-            AND DATE(created_at) BETWEEN '{$startDate}' AND '{$endDate}'
+            SELECT AVG(p.price) as avg_price
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            JOIN pasar ps ON p.market_id = ps.id_pasar
+            WHERE c.name = ? 
+            AND p.status = 'approved'
+            AND DATE(p.created_at) BETWEEN '{$startDate}' AND '{$endDate}'
             {$marketCondition}
         ";
         
@@ -98,11 +103,13 @@ try {
 
         // 2. Harga rata-rata periode sebelumnya
         $previousQuery = "
-            SELECT AVG(price) as avg_price
-            FROM prices 
-            WHERE commodity_name = ? 
-            AND status = 'approved'
-            AND DATE(created_at) BETWEEN '{$previousStartDate}' AND '{$previousEndDate}'
+            SELECT AVG(p.price) as avg_price
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            JOIN pasar ps ON p.market_id = ps.id_pasar
+            WHERE c.name = ? 
+            AND p.status = 'approved'
+            AND DATE(p.created_at) BETWEEN '{$previousStartDate}' AND '{$previousEndDate}'
             {$marketCondition}
         ";
         
@@ -118,15 +125,17 @@ try {
         // 4. Data tren untuk sparkline (harian dalam periode)
         $trendQuery = "
             SELECT 
-                DATE(created_at) as date,
-                AVG(price) as price
-            FROM prices 
-            WHERE commodity_name = ? 
-            AND status = 'approved'
-            AND DATE(created_at) BETWEEN '{$startDate}' AND '{$endDate}'
+                DATE(p.created_at) as date,
+                AVG(p.price) as price
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            JOIN pasar ps ON p.market_id = ps.id_pasar
+            WHERE c.name = ? 
+            AND p.status = 'approved'
+            AND DATE(p.created_at) BETWEEN '{$startDate}' AND '{$endDate}'
             {$marketCondition}
-            GROUP BY DATE(created_at)
-            ORDER BY DATE(created_at) ASC
+            GROUP BY DATE(p.created_at)
+            ORDER BY DATE(p.created_at) ASC
         ";
         
         $trendData = $db->fetchAll($trendQuery, $commodityParams);

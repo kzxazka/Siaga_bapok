@@ -31,27 +31,29 @@ try {
     if ($role === 'uptd' && $currentUser) {
         $userInfo = $db->fetchOne("SELECT market_assigned FROM users WHERE id = ?", [$currentUser['id']]);
         if ($userInfo && $userInfo['market_assigned']) {
-            $marketCondition = ' AND market_name = ?';
+            $marketCondition = ' AND ps.id_pasar = ?';
             $params[] = $userInfo['market_assigned'];
         }
     } elseif ($role === 'admin' && $market !== 'all') {
-        $marketCondition = ' AND market_name = ?';
+        $marketCondition = ' AND ps.nama_pasar = ?';
         $params[] = $market;
     }
 
     // Query untuk data chart - ambil semua komoditas dengan harga rata-rata per hari
     $chartQuery = "
         SELECT 
-            commodity_name,
-            DATE(created_at) as price_date,
-            AVG(price) as avg_price,
-            market_name
-        FROM prices 
-        WHERE status = 'approved' 
-        AND DATE(created_at) BETWEEN ? AND ?
+            c.name AS commodity_name,
+            DATE(p.created_at) as price_date,
+            AVG(p.price) as avg_price,
+            ps.nama_pasar AS market_name
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        WHERE p.status = 'approved' 
+        AND DATE(p.created_at) BETWEEN ? AND ?
         {$marketCondition}
-        GROUP BY commodity_name, DATE(created_at), market_name
-        ORDER BY price_date ASC, commodity_name ASC
+        GROUP BY c.name, DATE(p.created_at), ps.nama_pasar
+        ORDER BY price_date ASC, c.name ASC
     ";
 
     $chartData = $db->fetchAll($chartQuery, $params);
@@ -59,16 +61,18 @@ try {
     // Query untuk data tabel - ambil semua data mentah
     $tableQuery = "
         SELECT 
-            commodity_name,
-            market_name,
-            price,
-            DATE(created_at) as price_date,
-            created_at
-        FROM prices 
-        WHERE status = 'approved' 
-        AND DATE(created_at) BETWEEN ? AND ?
+            c.name AS commodity_name,
+            ps.nama_pasar AS market_name,
+            p.price,
+            DATE(p.created_at) as price_date,
+            p.created_at
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        WHERE p.status = 'approved' 
+        AND DATE(p.created_at) BETWEEN ? AND ?
         {$marketCondition}
-        ORDER BY created_at DESC
+        ORDER BY p.created_at DESC
     ";
 
     $tableData = $db->fetchAll($tableQuery, $params);

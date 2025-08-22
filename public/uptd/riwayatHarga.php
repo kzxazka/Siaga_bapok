@@ -34,7 +34,7 @@ if ($filterCommodity !== '') {
 }
 
 if ($filterMarket !== '') {
-    $where[] = "p.nama_pasar LIKE ?";
+    $where[] = "ps.nama_pasar LIKE ?";
     $params[] = "%$filterMarket%";
 }
 
@@ -46,11 +46,12 @@ if ($filterStatus !== '') {
 $whereSQL = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $priceHistory = $db->fetchAll("
-    SELECT p.id, c.name AS commodity_name, p.market_name, p.price, p.status, 
+    SELECT p.id, c.name AS commodity_name, ps.nama_pasar AS market_name, p.price, p.status, 
            p.created_at, u.full_name AS uploaded_by,
            a.full_name AS approved_by
     FROM prices p
     JOIN commodities c ON p.commodity_id = c.id
+    JOIN pasar ps ON p.market_id = ps.id_pasar
     JOIN users u ON p.uptd_user_id = u.id
     LEFT JOIN users a ON p.approved_by = a.id
     $whereSQL

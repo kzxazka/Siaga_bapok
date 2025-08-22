@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/../config/database.php';
 
 echo "<h3>Generating Dummy Data for SiagaBapok</h3>";
 
@@ -18,24 +18,16 @@ try {
         exit;
     }
     
-    // Commodity price ranges (in Rupiah)
-    $commodityPrices = [
-        'Beras Premium' => ['min' => 13000, 'max' => 18000],
-        'Beras Medium' => ['min' => 10000, 'max' => 14000],
-        'Cabai Merah' => ['min' => 20000, 'max' => 50000],
-        'Cabai Rawit' => ['min' => 25000, 'max' => 60000],
-        'Bawang Merah' => ['min' => 15000, 'max' => 30000],
-        'Bawang Putih' => ['min' => 18000, 'max' => 35000],
-        'Minyak Goreng' => ['min' => 14000, 'max' => 19000],
-        'Gula Pasir' => ['min' => 12000, 'max' => 16000],
-        'Daging Sapi' => ['min' => 110000, 'max' => 150000],
-        'Daging Ayam' => ['min' => 25000, 'max' => 35000],
-        'Telur Ayam' => ['min' => 22000, 'max' => 28000],
-        'Ikan Tongkol' => ['min' => 18000, 'max' => 25000]
-    ];
+    // Get commodities list
+    $commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY name");
+    
+    if (empty($commodities)) {
+        echo "No commodities found. Please check your commodities table.<br>";
+        exit;
+    }
     
     echo "Found " . count($uptdUsers) . " UPTD users<br>";
-    echo "Generating data for " . count($commodityPrices) . " commodities<br><br>";
+    echo "Found " . count($commodities) . " commodities<br><br>";
     
     $totalInserted = 0;
     
@@ -45,16 +37,19 @@ try {
         $currentDateTime = date('Y-m-d H:i:s', strtotime("-{$dayOffset} days") + rand(8*3600, 16*3600)); // Random time between 8 AM - 4 PM
         
         foreach ($uptdUsers as $uptd) {
-            foreach ($commodityPrices as $commodityName => $priceRange) {
+            foreach ($commodities as $commodity) {
                 // Add some randomness - not all commodities reported every day
                 if (rand(1, 100) <= 85) { // 85% chance of reporting
+                    
+                    // Get price range based on commodity name
+                    $priceRange = getPriceRange($commodity['name']);
                     
                     // Calculate base price with trend and volatility
                     $basePrice = ($priceRange['min'] + $priceRange['max']) / 2;
                     
                     // Add seasonal trend (some commodities more expensive in certain periods)
                     $seasonalFactor = 1;
-                    if (in_array($commodityName, ['Cabai Merah', 'Cabai Rawit'])) {
+                    if (in_array($commodity['name'], ['Cabai Merah', 'Cabai Rawit'])) {
                         // Cabai more expensive during rainy season (simulate)
                         $seasonalFactor = 1 + (sin(($dayOffset * 2 * pi()) / 365) * 0.3);
                     }
@@ -72,10 +67,10 @@ try {
                     $finalPrice = round($finalPrice, 0);
                     
                     // Insert the price
-                    $insertQuery = "INSERT INTO prices (commodity_name, price, market_name, uptd_user_id, status, approved_by, approved_at, created_at, updated_at) VALUES (?, ?, ?, ?, 'approved', 1, ?, ?, ?)";
+                    $insertQuery = "INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, status, approved_by, approved_at, created_at, updated_at) VALUES (?, ?, ?, ?, 'approved', 1, ?, ?, ?)";
                     
                     $db->query($insertQuery, [
-                        $commodityName,
+                        $commodity['id'],
                         $finalPrice,
                         $uptd['market_assigned'],
                         $uptd['id'],
@@ -97,52 +92,52 @@ try {
     // Add some pending data for testing
     echo "<br>Adding some pending data for testing...<br>";
     foreach ($uptdUsers as $uptd) {
-        $commodities = array_keys($commodityPrices);
-        $selectedCommodities = array_slice($commodities, 0, 3); // Take first 3 commodities
+        $randomCommodity = $commodities[array_rand($commodities)];
+        $priceRange = getPriceRange($randomCommodity['name']);
+        $price = rand($priceRange['min'], $priceRange['max']);
         
-        foreach ($selectedCommodities as $commodity) {
-            $priceRange = $commodityPrices[$commodity];
-            $price = rand($priceRange['min'], $priceRange['max']);
-            
-            $db->query(
-                "INSERT INTO prices (commodity_name, price, market_name, uptd_user_id, status, created_at) VALUES (?, ?, ?, ?, 'pending', NOW())",
-                [$commodity, $price, $uptd['market_assigned'], $uptd['id']]
-            );
-        }
+        $db->query(
+            "INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, status, created_at) VALUES (?, ?, ?, ?, 'pending', NOW())",
+            [$randomCommodity['id'], $price, $uptd['market_assigned'], $uptd['id']]
+        );
     }
     
-    echo "<br><strong>Data Generation Complete!</strong><br>";
-    echo "Total records inserted: " . $totalInserted . "<br>";
+    echo "<br>Data generation completed!<br>";
+    echo "Total prices inserted: " . $totalInserted . "<br>";
     
     // Show statistics
     $stats = $db->fetchOne("SELECT 
         COUNT(*) as total_prices,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_prices,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_prices,
-        COUNT(DISTINCT commodity_name) as total_commodities,
-        COUNT(DISTINCT market_name) as total_markets,
-        MIN(DATE(created_at)) as earliest_date,
-        MAX(DATE(created_at)) as latest_date
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
+        COUNT(DISTINCT commodity_id) as total_commodities,
+        COUNT(DISTINCT market_id) as total_markets
     FROM prices");
     
-    echo "<br><strong>Database Statistics:</strong><br>";
+    echo "<br><h4>Database Statistics:</h4>";
     echo "Total prices: " . $stats['total_prices'] . "<br>";
-    echo "Approved prices: " . $stats['approved_prices'] . "<br>";
-    echo "Pending prices: " . $stats['pending_prices'] . "<br>";
+    echo "Pending prices: " . $stats['pending_count'] . "<br>";
+    echo "Approved prices: " . $stats['approved_count'] . "<br>";
     echo "Total commodities: " . $stats['total_commodities'] . "<br>";
     echo "Total markets: " . $stats['total_markets'] . "<br>";
-    echo "Date range: " . $stats['earliest_date'] . " to " . $stats['latest_date'] . "<br>";
     
     // Show sample data
-    echo "<br><strong>Sample Data (Latest 10 records):</strong><br>";
-    $samples = $db->fetchAll("SELECT commodity_name, market_name, price, DATE(created_at) as date, status FROM prices ORDER BY created_at DESC LIMIT 10");
+    echo "<br><h4>Sample Data:</h4>";
+    $samples = $db->fetchAll("
+        SELECT c.name AS commodity_name, ps.nama_pasar AS market_name, p.price, DATE(p.created_at) as date, p.status 
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        JOIN pasar ps ON p.market_id = ps.id_pasar
+        ORDER BY p.created_at DESC 
+        LIMIT 10
+    ");
     
-    echo "<table border='1' cellpadding='5' cellspacing='0'>";
+    echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
     echo "<tr><th>Commodity</th><th>Market</th><th>Price</th><th>Date</th><th>Status</th></tr>";
     foreach ($samples as $sample) {
         echo "<tr>";
-        echo "<td>" . $sample['commodity_name'] . "</td>";
-        echo "<td>" . $sample['market_name'] . "</td>";
+        echo "<td>" . htmlspecialchars($sample['commodity_name']) . "</td>";
+        echo "<td>" . htmlspecialchars($sample['market_name']) . "</td>";
         echo "<td>Rp " . number_format($sample['price'], 0, ',', '.') . "</td>";
         echo "<td>" . $sample['date'] . "</td>";
         echo "<td>" . $sample['status'] . "</td>";
@@ -150,11 +145,26 @@ try {
     }
     echo "</table>";
     
-    echo "<br><strong>You can now test the chart functionality!</strong><br>";
-    echo "<a href='public/index.php'>Go to Main Page</a>";
-    
 } catch (Exception $e) {
-    echo "<div style='color: red;'><strong>Error:</strong> " . $e->getMessage() . "</div>";
-    echo "<pre>" . $e->getTraceAsString() . "</pre>";
+    echo "Error: " . $e->getMessage();
+}
+
+function getPriceRange($commodityName) {
+    $ranges = [
+        'Beras Premium' => ['min' => 13000, 'max' => 18000],
+        'Beras Medium' => ['min' => 10000, 'max' => 14000],
+        'Cabai Merah' => ['min' => 20000, 'max' => 50000],
+        'Cabai Rawit' => ['min' => 25000, 'max' => 60000],
+        'Bawang Merah' => ['min' => 15000, 'max' => 30000],
+        'Bawang Putih' => ['min' => 18000, 'max' => 35000],
+        'Minyak Goreng' => ['min' => 14000, 'max' => 19000],
+        'Gula Pasir' => ['min' => 12000, 'max' => 16000],
+        'Daging Sapi' => ['min' => 110000, 'max' => 150000],
+        'Daging Ayam' => ['min' => 25000, 'max' => 35000],
+        'Telur Ayam' => ['min' => 22000, 'max' => 28000],
+        'Ikan Tongkol' => ['min' => 18000, 'max' => 25000]
+    ];
+    
+    return $ranges[$commodityName] ?? ['min' => 10000, 'max' => 50000];
 }
 ?>

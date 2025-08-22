@@ -10,19 +10,19 @@ $db = new Database();
 $pdo = $db->getConnection();
 
 // Ambil list komoditas dan pasar
-$komoditas = $pdo->query("SELECT nama_komoditas FROM komoditas ORDER BY nama_komoditas ASC")->fetchAll(PDO::FETCH_ASSOC);
-$pasar = $pdo->query("SELECT nama_pasar FROM pasar ORDER BY nama_pasar ASC")->fetchAll(PDO::FETCH_ASSOC);
+$komoditas = $pdo->query("SELECT id, name, unit FROM commodities ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$pasar = $pdo->query("SELECT id_pasar, nama_pasar FROM pasar ORDER BY nama_pasar ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Proses simpan harga
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $commodity_name = trim($_POST['commodity_name']);
+    $commodity_id = (int) $_POST['commodity_id'];
     $price = (float) $_POST['price'];
-    $market_name = trim($_POST['market_name']);
+    $market_id = (int) $_POST['market_id'];
     $notes = trim($_POST['notes']) ?? null;
 
-    $stmt = $pdo->prepare("INSERT INTO prices (commodity_name, price, market_name, uptd_user_id, notes, status) 
+    $stmt = $pdo->prepare("INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, notes, status) 
                            VALUES (?, ?, ?, ?, ?, 'pending')");
-    $stmt->execute([$commodity_name, $price, $market_name, $user['id'], $notes]);
+    $stmt->execute([$commodity_id, $price, $market_id, $user['id'], $notes]);
 
     $_SESSION['success'] = "Data harga berhasil dikirim, menunggu persetujuan admin.";
     header("Location: form_uploadHarga.php");
@@ -52,12 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <form method="POST">
 
                 <div class="mb-3">
-                    <label for="commodity_name" class="form-label">Komoditas</label>
-                    <select name="commodity_name" id="commodity_name" class="form-select" required>
+                    <label for="commodity_id" class="form-label">Komoditas</label>
+                    <select name="commodity_id" id="commodity_id" class="form-select" required>
                         <option value="">-- Pilih Komoditas --</option>
                         <?php foreach ($komoditas as $k): ?>
-                            <option value="<?= htmlspecialchars($k['nama_komoditas']) ?>">
-                                <?= htmlspecialchars($k['nama_komoditas']) ?>
+                            <option value="<?= $k['id'] ?>">
+                                <?= htmlspecialchars($k['name']) ?> (<?= htmlspecialchars($k['unit']) ?>)
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -69,11 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div class="mb-3">
-                    <label for="market_name" class="form-label">Pasar</label>
-                    <select name="market_name" id="market_name" class="form-select" required>
+                    <label for="market_id" class="form-label">Pasar</label>
+                    <select name="market_id" id="market_id" class="form-select" required>
                         <option value="">-- Pilih Pasar --</option>
                         <?php foreach ($pasar as $p): ?>
-                            <option value="<?= htmlspecialchars($p['nama_pasar']) ?>">
+                            <option value="<?= $p['id_pasar'] ?>">
                                 <?= htmlspecialchars($p['nama_pasar']) ?>
                             </option>
                         <?php endforeach; ?>

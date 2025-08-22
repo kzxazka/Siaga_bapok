@@ -327,14 +327,13 @@ function createPrice($params, $body, $db, $auth) {
     }
     
     // Insert new price
-    $sql = "INSERT INTO prices (commodity_id, price, market_id, market_name, uptd_user_id, notes, status) 
-            VALUES (?, ?, ?, ?, ?, ?, 'pending')";
+    $sql = "INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, notes, status) 
+            VALUES (?, ?, ?, ?, ?, 'pending')";
     
     $params = [
         $body['commodity_id'],
         $body['price'],
         $market['id_pasar'],
-        $user['market_assigned'],
         $user['id'],
         $body['notes'] ?? null
     ];
@@ -346,11 +345,12 @@ function createPrice($params, $body, $db, $auth) {
         // Get the inserted price
         $newPrice = $db->fetchOne("SELECT 
                                     p.id, p.commodity_id, c.name as commodity_name, c.unit,
-                                    p.price, p.market_id, p.market_name,
+                                    p.price, p.market_id, ps.nama_pasar as market_name,
                                     p.uptd_user_id, u.full_name as uptd_name,
                                     p.status, p.notes, p.created_at, p.updated_at
                                 FROM prices p
                                 JOIN commodities c ON p.commodity_id = c.id
+                                JOIN pasar ps ON p.market_id = ps.id_pasar
                                 JOIN users u ON p.uptd_user_id = u.id
                                 WHERE p.id = ?", [$priceId]);
         

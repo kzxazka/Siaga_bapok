@@ -42,12 +42,13 @@ $pendingData = $db->fetchAll("
         c.name AS commodity_name, 
         c.unit,
         p.price, 
-        p.market_name, 
+        ps.nama_pasar AS market_name, 
         p.uptd_user_id, 
         p.created_at, 
         u.username AS uploaded_by
     FROM prices p
     JOIN commodities c ON p.commodity_id = c.id
+    JOIN pasar ps ON p.market_id = ps.id_pasar
     LEFT JOIN users u ON p.uptd_user_id = u.id
     WHERE p.status = 'pending'
     ORDER BY p.created_at DESC
