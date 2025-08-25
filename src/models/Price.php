@@ -386,5 +386,100 @@ class Price {
         
         return $results;
     }
+
+    public function getCommodityPriceComparison($selectedDate, $comparisonDays, $uptdId = null) {
+        if (!$selectedDate) {
+            $selectedDate = date('Y-m-d');
+        }
+        
+        // Hitung tanggal perbandingan (H-N)
+        $comparisonDate = date('Y-m-d', strtotime($selectedDate . ' -' . $comparisonDays . ' days'));
+        
+        $sql = "SELECT 
+                    c.id,
+                    c.name AS commodity_name, 
+                    c.unit,
+                    -- Harga pada tanggal yang dipilih
+                    (SELECT AVG(p1.price) 
+                     FROM prices p1 
+                     WHERE p1.commodity_id = c.id 
+                     AND DATE(p1.created_at) = ? 
+                     AND p1.status = 'approved') as selected_date_price,
+                    
+                    -- Harga pada H-N
+                    (SELECT AVG(p2.price) 
+                     FROM prices p2 
+                     WHERE p2.commodity_id = c.id 
+                     AND DATE(p2.created_at) = ? 
+                     AND p2.status = 'approved') as comparison_date_price,
+                    
+                    -- Data untuk grafik (rentang dari H-N sampai tanggal dipilih)
+                    (SELECT GROUP_CONCAT(
+                        CONCAT(DATE(p3.created_at), ':', AVG(p3.price)) 
+                        ORDER BY DATE(p3.created_at) ASC 
+                        SEPARATOR ','
+                     )
+                     FROM prices p3 
+                     WHERE p3.commodity_id = c.id 
+                     AND DATE(p3.created_at) BETWEEN ? AND ? 
+                     AND p3.status = 'approved'
+                     GROUP BY DATE(p3.created_at)) as chart_data
+                    
+                FROM commodities c
+                WHERE c.id IN (
+                    SELECT DISTINCT commodity_id 
+                    FROM prices 
+                    WHERE status = 'approved'
+                    AND (DATE(created_at) = ? OR DATE(created_at) = ?)
+                )";
+        
+        $params = [$selectedDate, $comparisonDate, $comparisonDate, $selectedDate, $selectedDate, $comparisonDate];
+        
+        if ($uptdId) {
+            $sql .= " AND c.id IN (
+                SELECT DISTINCT commodity_id 
+                FROM prices 
+                WHERE uptd_user_id = ? AND status = 'approved'
+                AND (DATE(created_at) = ? OR DATE(created_at) = ?)
+            )";
+            $params[] = $uptdId;
+            $params[] = $selectedDate;
+            $params[] = $comparisonDate;
+        }
+        
+        $sql .= " ORDER BY c.name ASC";
+        
+        $results = $this->db->fetchAll($sql, $params);
+        
+        // Proses data untuk menghitung persentase dan memformat chart data
+        foreach ($results as &$item) {
+            // Hitung persentase perubahan
+            if (!empty($item['selected_date_price']) && !empty($item['comparison_date_price']) && $item['comparison_date_price'] > 0) {
+                $item['percentage_change'] = (($item['selected_date_price'] - $item['comparison_date_price']) / $item['comparison_date_price']) * 100;
+            } else {
+                $item['percentage_change'] = null;
+            }
+            
+            // Format chart data untuk Chart.js
+            if (!empty($item['chart_data'])) {
+                $chartData = [];
+                $pairs = explode(',', $item['chart_data']);
+                foreach ($pairs as $pair) {
+                    if (strpos($pair, ':') !== false) {
+                        list($date, $price) = explode(':', $pair);
+                        $chartData[] = [
+                            'date' => $date,
+                            'price' => (float)$price
+                        ];
+                    }
+                }
+                $item['chart_data_formatted'] = $chartData;
+            } else {
+                $item['chart_data_formatted'] = [];
+            }
+        }
+        
+        return $results;
+    }
 }
 ?>

@@ -37,7 +37,7 @@ $referenceDate = isset($_GET['date']) ? sanitizeInput($_GET['date']) : date('Y-m
 // Tentukan periode perbandingan (default: 7 hari)
 $comparisonPeriod = isset($_GET['comparison']) ? (int)sanitizeInput($_GET['comparison']) : 7;
 // Validasi periode perbandingan
-if (!in_array($comparisonPeriod, [7, 30, 90])) {
+if (!in_array($comparisonPeriod, [1, 7, 30])) {
     $comparisonPeriod = 7;
 }
 
@@ -46,6 +46,9 @@ $uptdFilter = null;
 if ($currentUser && $currentUser['role'] === 'uptd') {
     $uptdFilter = $currentUser['id'];
 }
+
+// Ambil data harga komoditas dengan perbandingan untuk tabel
+$commodityPriceComparison = $priceModel->getCommodityPriceComparison($referenceDate, $comparisonPeriod, $uptdFilter);
 
 // Ambil data tren harga dengan perbandingan untuk grafik SP2KP-style
 $priceTrendsWithComparison = $priceModel->getPriceTrendsWithComparison($comparisonPeriod, $referenceDate, $uptdFilter);
@@ -192,6 +195,15 @@ $pageTitle = 'Beranda - Siaga Bapok';
     .table th, .table td {
         font-size: 12px !important;
         padding: 4px !important;
+    }
+    
+    .sparkline-container {
+        height: 40px !important;
+        width: 150px !important;
+    }
+    
+    .commodity-price-table {
+        page-break-inside: avoid;
     }
 }
 /* SP2KP Dashboard Styling */
@@ -912,6 +924,152 @@ $pageTitle = 'Beranda - Siaga Bapok';
     </div>
 </div>
 
+        <!-- Tabel Harga Komoditas -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <h4 class="mb-0">
+                                    <i class="bi bi-table me-2"></i>
+                                    Tabel Harga Komoditas
+                                </h4>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <div class="d-flex justify-content-end align-items-center gap-2">
+                                    <select id="comparisonSelect" class="form-select form-select-sm" style="width: auto;">
+                                        <option value="1" <?= $comparisonPeriod == 1 ? 'selected' : '' ?>>H-1</option>
+                                        <option value="7" <?= $comparisonPeriod == 7 ? 'selected' : '' ?>>H-7</option>
+                                        <option value="30" <?= $comparisonPeriod == 30 ? 'selected' : '' ?>>H-30</option>
+                                    </select>
+                                    <input type="date" id="selectedDatePicker" class="form-control form-control-sm" value="<?= $referenceDate ?>" style="width: auto;">
+                                    <button class="btn btn-sm btn-light" onclick="window.print()">
+                                        <i class="bi bi-printer"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 commodity-price-table" id="commodityPriceTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 20%;">Jenis Komoditas</th>
+                                        <th style="width: 10%;">Satuan</th>
+                                        <th style="width: 15%;" class="text-end">Harga (<?= date('d/m/Y', strtotime($referenceDate)) ?>)</th>
+                                        <th style="width: 15%;" class="text-end">Harga (H-<?= $comparisonPeriod ?>)</th>
+                                        <th style="width: 10%;" class="text-center">% H-<?= $comparisonPeriod ?></th>
+                                        <th style="width: 30%;" class="text-center">Grafik</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($commodityPriceComparison)): ?>
+                                        <tr>
+                                            <td colspan="6" class="text-center py-4">
+                                                <div class="text-muted">
+                                                    <i class="bi bi-inbox fs-1"></i>
+                                                    <p class="mt-2">Tidak ada data harga komoditas</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($commodityPriceComparison as $item): ?>
+                                            <tr class="commodity-row">
+                                                <td>
+                                                    <strong><?= htmlspecialchars($item['commodity_name']) ?></strong>
+                                                </td>
+                                                <td class="text-center"><?= htmlspecialchars($item['unit']) ?></td>
+                                                <td class="text-end">
+                                                    <?php if ($item['selected_date_price']): ?>
+                                                        <strong class="text-primary">
+                                                            Rp <?= number_format($item['selected_date_price'], 0, ',', '.') ?>
+                                                        </strong>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-end">
+                                                    <?php if ($item['comparison_date_price']): ?>
+                                                        Rp <?= number_format($item['comparison_date_price'], 0, ',', '.') ?>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-center">
+                                                    <?php if ($item['percentage_change'] !== null): ?>
+                                                        <?php 
+                                                        $changeClass = '';
+                                                        $changeIcon = '';
+                                                        if ($item['percentage_change'] > 5) {
+                                                            $changeClass = 'text-danger';
+                                                            $changeIcon = '↑';
+                                                        } elseif ($item['percentage_change'] > 0) {
+                                                            $changeClass = 'text-warning';
+                                                            $changeIcon = '↑';
+                                                        } elseif ($item['percentage_change'] == 0) {
+                                                            $changeClass = 'text-secondary';
+                                                            $changeIcon = '→';
+                                                        } elseif ($item['percentage_change'] >= -5) {
+                                                            $changeClass = 'text-info';
+                                                            $changeIcon = '↓';
+                                                        } else {
+                                                            $changeClass = 'text-success';
+                                                            $changeIcon = '↓';
+                                                        }
+                                                        ?>
+                                                        <span class="<?= $changeClass ?>">
+                                                            <?= $changeIcon ?> <?= number_format($item['percentage_change'], 1) ?>%
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-center">
+                                                    <?php if (!empty($item['chart_data_formatted'])): ?>
+                                                        <div class="sparkline-container" style="height: 60px; width: 200px;">
+                                                            <canvas id="sparkline-<?= $item['id'] ?>" width="200" height="60"></canvas>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Legend -->
+                        <div class="card-footer bg-light">
+                            <div class="row">
+                                <div class="col-12">
+                                    <small class="text-muted"><strong>Keterangan:</strong></small>
+                                    <div class="d-flex flex-wrap gap-3 mt-2">
+                                        <span class="badge bg-danger">Naik >5%</span>
+                                        <span class="badge bg-warning">Naik 0-5%</span>
+                                        <span class="badge bg-secondary">Tetap</span>
+                                        <span class="badge bg-info">Turun 0-5%</span>
+                                        <span class="badge bg-success">Turun >5%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-12">
+                                    <small class="text-muted">
+                                        Sumber: SP2KP, diolah Pusat Data dan Sistem Informasi <?= date('Y') ?> | 
+                                        Data terakhir diperbarui: <?= date('d M Y, H:i') ?> WIB
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Call to Action -->
         <div class="row">
             <div class="col-12 text-center">
@@ -969,7 +1127,257 @@ $pageTitle = 'Beranda - Siaga Bapok';
     
     <script>
         let chartInstance = null;
-let dataTable = null;
+        let dataTable = null;
+        
+        // Global variable untuk menyimpan data komoditas
+        window.currentCommodityData = <?= json_encode($commodityPriceComparison) ?>;
+        
+        // Inisialisasi mini grafik (sparkline) untuk tabel komoditas
+        function initializeCommoditySparklines() {
+            const sparklineCanvases = document.querySelectorAll('[id^="sparkline-"]');
+            
+            sparklineCanvases.forEach(canvas => {
+                // Destroy existing chart if it exists
+                if (canvas.chart) {
+                    canvas.chart.destroy();
+                }
+                
+                const commodityId = canvas.id.replace('sparkline-', '');
+                const row = canvas.closest('tr');
+                
+                // Get chart data from the current table data
+                const chartData = window.currentCommodityData || [];
+                const commodityData = chartData.find(item => item.id == commodityId);
+                
+                if (commodityData && commodityData.chart_data_formatted && commodityData.chart_data_formatted.length > 0) {
+                    const ctx = canvas.getContext('2d');
+                    const labels = commodityData.chart_data_formatted.map(item => item.date);
+                    const prices = commodityData.chart_data_formatted.map(item => item.price);
+                    
+                    // Tentukan warna berdasarkan trend
+                    let lineColor = '#0d6efd'; // default blue
+                    if (prices.length > 1) {
+                        const firstPrice = prices[0];
+                        const lastPrice = prices[prices.length - 1];
+                        if (lastPrice > firstPrice) {
+                            lineColor = '#dc3545'; // red for increase
+                        } else if (lastPrice < firstPrice) {
+                            lineColor = '#28a745'; // green for decrease
+                        }
+                    }
+                    
+                    const chart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: prices,
+                                borderColor: lineColor,
+                                backgroundColor: lineColor.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.2,
+                                pointRadius: 0,
+                                pointHoverRadius: 3,
+                                pointBackgroundColor: lineColor,
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                intersect: false,
+                                mode: 'index'
+                            },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    enabled: true,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                    titleColor: 'white',
+                                    bodyColor: 'white',
+                                    callbacks: {
+                                        title: function(context) {
+                                            const date = new Date(context[0].label);
+                                            return date.toLocaleDateString('id-ID');
+                                        },
+                                        label: function(context) {
+                                            return `Harga: Rp ${context.parsed.y.toLocaleString('id-ID')}`;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: { display: false },
+                                y: { display: false }
+                            },
+                            elements: {
+                                point: { radius: 0, hoverRadius: 4 }
+                            }
+                        }
+                    });
+                    
+                    // Store chart reference for cleanup
+                    canvas.chart = chart;
+                }
+            });
+        }
+        
+        // Update tabel komoditas berdasarkan filter
+        function updateCommodityTable() {
+            const selectedDate = document.getElementById('selectedDatePicker').value;
+            const comparisonDays = document.getElementById('comparisonSelect').value;
+            
+            // Show loading state
+            const tableBody = document.querySelector('#commodityPriceTable tbody');
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div> Memuat data...</td></tr>';
+            
+            // Fetch new data
+            const apiUrl = `get_commodity_price_comparison.php?date=${selectedDate}&comparison=${comparisonDays}`;
+            
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderCommodityTable(data.data, selectedDate, comparisonDays);
+                        // Update URL without page reload
+                        const currentUrl = new URL(window.location);
+                        currentUrl.searchParams.set('date', selectedDate);
+                        currentUrl.searchParams.set('comparison', comparisonDays);
+                        window.history.pushState({}, '', currentUrl.toString());
+                    } else {
+                        throw new Error(data.error || 'Terjadi kesalahan saat memuat data');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Error: ${error.message}</td></tr>`;
+                });
+        }
+        
+        // Render tabel komoditas
+        function renderCommodityTable(data, selectedDate, comparisonDays) {
+            const tableBody = document.querySelector('#commodityPriceTable tbody');
+            
+            // Update global data
+            window.currentCommodityData = data;
+            
+            if (!data || data.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <div class="text-muted">
+                                <i class="bi bi-inbox fs-1"></i>
+                                <p class="mt-2">Tidak ada data harga komoditas</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            let html = '';
+            data.forEach(item => {
+                const selectedDateFormatted = new Date(selectedDate).toLocaleDateString('id-ID');
+                const changeClass = getChangeClass(item.percentage_change);
+                const changeIcon = getChangeIcon(item.percentage_change);
+                
+                html += `
+                    <tr class="commodity-row">
+                        <td><strong>${escapeHtml(item.commodity_name)}</strong></td>
+                        <td class="text-center">${escapeHtml(item.unit)}</td>
+                        <td class="text-end">
+                            ${item.selected_date_price ? 
+                                `<strong class="text-primary">Rp ${numberFormat(item.selected_date_price)}</strong>` : 
+                                '<span class="text-muted">-</span>'
+                            }
+                        </td>
+                        <td class="text-end">
+                            ${item.comparison_date_price ? 
+                                `Rp ${numberFormat(item.comparison_date_price)}` : 
+                                '<span class="text-muted">-</span>'
+                            }
+                        </td>
+                        <td class="text-center">
+                            ${item.percentage_change !== null ? 
+                                `<span class="${changeClass}">${changeIcon} ${numberFormat(item.percentage_change, 1)}%</span>` : 
+                                '<span class="text-muted">-</span>'
+                            }
+                        </td>
+                        <td class="text-center">
+                            ${item.chart_data_formatted && item.chart_data_formatted.length > 0 ? 
+                                `<div class="sparkline-container" style="height: 60px; width: 200px;">
+                                    <canvas id="sparkline-${item.id}" width="200" height="60"></canvas>
+                                </div>` : 
+                                '<span class="text-muted">-</span>'
+                            }
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tableBody.innerHTML = html;
+            
+            // Update table headers
+            document.querySelector('#commodityPriceTable th:nth-child(3)').textContent = `Harga (${selectedDateFormatted})`;
+            document.querySelector('#commodityPriceTable th:nth-child(4)').textContent = `Harga (H-${comparisonDays})`;
+            document.querySelector('#commodityPriceTable th:nth-child(5)').textContent = `% H-${comparisonDays}`;
+            
+            // Initialize sparklines for new data
+            setTimeout(() => {
+                initializeCommoditySparklines();
+            }, 100);
+        }
+        
+        // Helper functions
+        function getChangeClass(percentage) {
+            if (percentage === null) return '';
+            if (percentage > 5) return 'text-danger';
+            if (percentage > 0) return 'text-warning';
+            if (percentage == 0) return 'text-secondary';
+            if (percentage >= -5) return 'text-info';
+            return 'text-success';
+        }
+        
+        function getChangeIcon(percentage) {
+            if (percentage === null) return '';
+            if (percentage > 0) return '↑';
+            if (percentage < 0) return '↓';
+            return '→';
+        }
+        
+        function numberFormat(number, decimals = 0) {
+            return new Intl.NumberFormat('id-ID', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            }).format(number);
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Event listeners untuk filter
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize sparklines
+            initializeCommoditySparklines();
+            
+            // Add event listeners for filters
+            const comparisonSelect = document.getElementById('comparisonSelect');
+            const selectedDatePicker = document.getElementById('selectedDatePicker');
+            
+            if (comparisonSelect) {
+                comparisonSelect.addEventListener('change', updateCommodityTable);
+            }
+            
+            if (selectedDatePicker) {
+                selectedDatePicker.addEventListener('change', updateCommodityTable);
+            }
+        });
 
 // Initialize chart and table data loading
 function loadChartAndTableData() {
