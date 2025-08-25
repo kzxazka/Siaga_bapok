@@ -395,6 +395,7 @@ class Price {
         // Hitung tanggal perbandingan (H-N)
         $comparisonDate = date('Y-m-d', strtotime($selectedDate . ' -' . $comparisonDays . ' days'));
         
+        // Query utama untuk data komoditas dan harga
         $sql = "SELECT 
                     c.id,
                     c.name AS commodity_name, 
@@ -411,19 +412,7 @@ class Price {
                      FROM prices p2 
                      WHERE p2.commodity_id = c.id 
                      AND DATE(p2.created_at) = ? 
-                     AND p2.status = 'approved') as comparison_date_price,
-                    
-                    -- Data untuk grafik (rentang dari H-N sampai tanggal dipilih)
-                    (SELECT GROUP_CONCAT(
-                        CONCAT(DATE(p3.created_at), ':', AVG(p3.price)) 
-                        ORDER BY DATE(p3.created_at) ASC 
-                        SEPARATOR ','
-                     )
-                     FROM prices p3 
-                     WHERE p3.commodity_id = c.id 
-                     AND DATE(p3.created_at) BETWEEN ? AND ? 
-                     AND p3.status = 'approved'
-                     GROUP BY DATE(p3.created_at)) as chart_data
+                     AND p2.status = 'approved') as comparison_date_price
                     
                 FROM commodities c
                 WHERE c.id IN (
@@ -433,7 +422,7 @@ class Price {
                     AND (DATE(created_at) = ? OR DATE(created_at) = ?)
                 )";
         
-        $params = [$selectedDate, $comparisonDate, $comparisonDate, $selectedDate, $selectedDate, $comparisonDate];
+        $params = [$selectedDate, $comparisonDate, $selectedDate, $comparisonDate];
         
         if ($uptdId) {
             $sql .= " AND c.id IN (
@@ -451,7 +440,7 @@ class Price {
         
         $results = $this->db->fetchAll($sql, $params);
         
-        // Proses data untuk menghitung persentase dan memformat chart data
+        // Ambil data chart secara terpisah untuk setiap komoditas
         foreach ($results as &$item) {
             // Hitung persentase perubahan
             if (!empty($item['selected_date_price']) && !empty($item['comparison_date_price']) && $item['comparison_date_price'] > 0) {
@@ -460,22 +449,27 @@ class Price {
                 $item['percentage_change'] = null;
             }
             
+            // Ambil data chart untuk komoditas ini
+            $chartSql = "SELECT 
+                            DATE(p.created_at) as price_date,
+                            AVG(p.price) as avg_price
+                         FROM prices p
+                         WHERE p.commodity_id = ? 
+                         AND DATE(p.created_at) BETWEEN ? AND ? 
+                         AND p.status = 'approved'
+                         GROUP BY DATE(p.created_at)
+                         ORDER BY price_date ASC";
+            
+            $chartParams = [$item['id'], $comparisonDate, $selectedDate];
+            $chartData = $this->db->fetchAll($chartSql, $chartParams);
+            
             // Format chart data untuk Chart.js
-            if (!empty($item['chart_data'])) {
-                $chartData = [];
-                $pairs = explode(',', $item['chart_data']);
-                foreach ($pairs as $pair) {
-                    if (strpos($pair, ':') !== false) {
-                        list($date, $price) = explode(':', $pair);
-                        $chartData[] = [
-                            'date' => $date,
-                            'price' => (float)$price
-                        ];
-                    }
-                }
-                $item['chart_data_formatted'] = $chartData;
-            } else {
-                $item['chart_data_formatted'] = [];
+            $item['chart_data_formatted'] = [];
+            foreach ($chartData as $chartItem) {
+                $item['chart_data_formatted'][] = [
+                    'date' => $chartItem['price_date'],
+                    'price' => (float)$chartItem['avg_price']
+                ];
             }
         }
         
