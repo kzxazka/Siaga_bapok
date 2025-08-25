@@ -9,15 +9,18 @@ class User {
     }
     
     public function authenticate($username, $password) {
-        $sql = "SELECT * FROM users WHERE username = ? AND is_active = 1";
-        $user = $this->db->fetchOne($sql, [$username]);
-        
-        if ($user && password_verify($password, $user['password'])) {
-            return $user;
-        }
-        
-        return false;
+    $sql = "SELECT * FROM users WHERE username = ? AND is_active = 1";
+    $user = $this->db->fetchOne($sql, [$username]);
+
+    if ($user) {
+        var_dump("Input password:", $password);
+        var_dump("Hash in DB:", $user['password']);
+        var_dump("Verify result:", password_verify($password, $user['password']));
+        exit;
     }
+
+    return false;
+}
     
     public function createSession($userId) {
         $token = generateSessionToken();

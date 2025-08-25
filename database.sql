@@ -97,7 +97,7 @@ INSERT INTO commodities (name, unit, kategori) VALUES
 
 -- Insert Default Admin User
 INSERT INTO users (username, email, password, full_name, role) VALUES
-('admin', 'admin@siagabapok.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'admin');
+('admin', 'admin@siagabapok.com', 'a$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igia', 'Administrator', 'admin');
 
 -- Insert Sample UPTD Users (with proper market_assigned foreign keys)
 INSERT INTO users (username, email, password, full_name, role, market_assigned) VALUES
@@ -121,7 +121,7 @@ BEGIN
     DECLARE day_counter INT DEFAULT 0;
     DECLARE current_date DATE;
     
-    -- Cursor untuk UPTD users
+    -- Cursor untuk UPTD users  
     DECLARE uptd_cursor CURSOR FOR 
         SELECT id, market_assigned FROM users WHERE role = 'uptd' AND market_assigned IS NOT NULL;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;

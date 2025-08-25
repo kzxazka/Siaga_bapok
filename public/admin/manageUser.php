@@ -88,6 +88,7 @@ $total = $db->fetchOne("SELECT COUNT(*) as cnt FROM users $where", $params)['cnt
 $pages = ceil($total / $perPage);
 $offset = ($page - 1) * $perPage;
 $users = $db->fetchAll("SELECT * FROM users $where ORDER BY created_at DESC LIMIT $perPage OFFSET $offset", $params);
+$markets = $db->fetchAll("SELECT id_pasar, nama_pasar FROM pasar ORDER BY nama_pasar");
 
 // Edit mode
 $editUser = null;
@@ -183,7 +184,15 @@ $pageTitle = 'Manajemen User - Admin Siaga Bapok';
                         </div>
                         <div class="mb-3" id="marketAssignedField" style="<?= isset($editUser['role']) && $editUser['role'] === 'uptd' ? '' : 'display:none;'; ?>">
                             <label>Pasar Ditugaskan</label>
-                            <input type="text" name="market_assigned" class="form-control" value="<?= $editUser['market_assigned'] ?? ''; ?>">
+                            <select name="market_assigned" class="form-select">
+                                <option value="" disabled selected>-- Pilih Pasar --</option>
+                                <?php foreach ($markets as $m): ?>
+                                    <option value="<?= $m['id_pasar'] ?>" 
+                                        <?= isset($editUser['market_assigned']) && $editUser['market_assigned'] == $m['id_pasar'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($m['nama_pasar']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         <div class="mb-3 form-check">
                             <input type="checkbox" name="is_active" class="form-check-input" id="isActive" <?= isset($editUser['is_active']) && $editUser['is_active'] ? 'checked' : ''; ?>>

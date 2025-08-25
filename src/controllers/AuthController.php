@@ -71,6 +71,9 @@ class AuthController {
             $_SESSION['role'] = $user['role'];
             $_SESSION['is_logged_in'] = true;
             
+            // DEBUG sementara
+            error_log("LOGIN SUCCESS: " . print_r($_SESSION, true));
+
             // Set cookie for persistent login (24 hours)
             setcookie('session_token', $sessionToken, time() + (24 * 60 * 60), '/', '', false, true);
             

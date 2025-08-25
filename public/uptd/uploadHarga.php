@@ -8,6 +8,15 @@ $role = $_SESSION['role'] ?? '';
 $user = $auth->requireRole($role === 'admin' ? 'admin' : 'uptd');
 
 $db = new Database();
+$assignedMarket = null;
+if ($role === 'uptd') {
+    $assignedMarket = $db->fetchOne("
+        SELECT ps.id_pasar, ps.nama_pasar
+        FROM users u
+        JOIN pasar ps ON u.market_assigned = ps.id_pasar
+        WHERE u.id = ?
+    ", [$_SESSION['user_id']]);
+}
 
 // Include sidebar sesuai role
 if ($role === 'admin') {
@@ -226,17 +235,26 @@ if ($role === 'uptd') {
                                 <input type="number" name="price" class="form-control" min="1" max="99999" required>
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Pilih Pasar</label>
-                            <select name="market_id" class="form-select" required>
-                            <option value="" selected disabled>-- Pilih --</option>
-                            <?php foreach ($markets as $m): ?>
-                                <option value="<?= $m['id_pasar'] ?>">
-                                    <?= htmlspecialchars($m['nama_pasar']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        </div>
+                        <?php if ($role === 'admin'): ?>
+                            <div class="mb-3">
+                                <label class="form-label">Pilih Pasar</label>
+                                <select name="market_id" class="form-select" required>
+                                    <option value="" selected disabled>-- Pilih --</option>
+                                    <?php foreach ($markets as $m): ?>
+                                        <option value="<?= $m['id_pasar'] ?>">
+                                            <?= htmlspecialchars($m['nama_pasar']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        <?php else: ?>
+                            <!-- UPTD: pasar otomatis sesuai assigned -->
+                            <input type="hidden" name="market_id" value="<?= $assignedMarket['id_pasar'] ?>">
+                            <div class="mb-3">
+                                <label class="form-label">Pasar</label>
+                                <input type="text" class="form-control" value="<?= htmlspecialchars($assignedMarket['nama_pasar']) ?>" readonly>
+                            </div>
+                        <?php endif; ?>
                         <div class="mb-3">
                             <label class="form-label">Catatan (Opsional)</label>
                             <textarea name="notes" class="form-control" rows="2"></textarea>
