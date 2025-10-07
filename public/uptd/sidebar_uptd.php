@@ -56,7 +56,7 @@
 
 <nav class="sidebar" id="sidebarUptd">
     <div class="p-3">
-        <h4 class="text-center mb-4"><i class="bi bi-graph-up-arrow me-2"></i>SIAGA BAPOK</h4>
+        <h4 class="text-center mb-4"><i class="bi bi-graph-up-arrow me-2"></i>SIAGABAPOK</h4>
         <small class="text-center d-block mb-3 opacity-75">UPTD Panel</small>
     </div>
     <ul class="nav flex-column">

@@ -1,6 +1,8 @@
 <?php
+// Load required files
+require_once __DIR__ . '/../models/Database.php';
+require_once __DIR__ . '/../models/BaseModel.php';
 require_once __DIR__ . '/../models/User.php';
-require_once __DIR__ . '/../../config/database.php';
 
 class AuthController {
     private $userModel;
@@ -20,68 +22,122 @@ class AuthController {
     /**
      * Handle user login
      */
+    private $maxLoginAttempts = 5;
+    private $lockoutDuration = 900; // 15 minutes
+    private $lockoutKeyPrefix = 'login_attempts_';
+
     public function login() {
-        // If already logged in, redirect to appropriate dashboard
+        // If already logged in, redirect
         if ($this->isLoggedIn()) {
             $this->redirectToDashboard();
             return;
         }
-        
-        // Handle POST request (login form submission)
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $username = sanitizeInput($_POST['username'] ?? '');
-            $password = $_POST['password'] ?? '';
-            
-            // Validate input
-            if (empty($username) || empty($password)) {
-                $_SESSION['error'] = 'Username dan password harus diisi.';
-                return;
-            }
-            
-            // Check if user exists and is active
-            $sql = "SELECT * FROM users WHERE username = ?";
-            $db = new Database();
-            $user = $db->fetchOne($sql, [$username]);
-            
-            if (!$user) {
-                $_SESSION['error'] = 'Username atau password salah.';
-                return;
-            }
-            
-            // Check if user is active
-            if (!$user['is_active']) {
-                $_SESSION['error'] = 'Akun Anda belum disetujui oleh Admin.';
-                return;
-            }
-            
-            // Verify password
-            if (!password_verify($password, $user['password'])) {
-                $_SESSION['error'] = 'Username atau password salah.';
-                return;
-            }
-            
-            // Authentication successful - create session
-            $sessionToken = $this->userModel->createSession($user['id']);
-            
-            // Set session variables
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['full_name'] = $user['full_name'];
-            $_SESSION['market_assigned'] = $user['market_assigned'];
-            $_SESSION['role'] = $user['role'];
-            $_SESSION['is_logged_in'] = true;
-            
-            // DEBUG sementara
-            error_log("LOGIN SUCCESS: " . print_r($_SESSION, true));
 
-            // Set cookie for persistent login (24 hours)
-            setcookie('session_token', $sessionToken, time() + (24 * 60 * 60), '/', '', false, true);
-            
-            $_SESSION['success'] = 'Login berhasil! Selamat datang, ' . $user['full_name'];
-            
-            // Redirect based on role
-            $this->redirectToDashboard();
+        $ip = $_SERVER['REMOTE_ADDR'];
+        $now = time();
+        $lockoutKey = $this->lockoutKeyPrefix . $ip;
+        
+        // Initialize or get login attempts
+        $attempts = $_SESSION[$lockoutKey] ?? ['count' => 0, 'time' => $now];
+        
+        // Reset counter if last attempt was more than lockout time ago
+        if (($now - $attempts['time']) > $this->lockoutDuration) {
+            $attempts = ['count' => 0, 'time' => $now];
         }
+        
+        // Check if max attempts reached
+        if ($attempts['count'] >= $this->maxLoginAttempts) {
+            $timeLeft = $this->lockoutDuration - ($now - $attempts['time']);
+            if ($timeLeft > 0) {
+                $_SESSION['error'] = "Terlalu banyak percobaan login. Silakan coba lagi dalam " . ceil($timeLeft/60) . " menit.";
+                return;
+            } else {
+                // Reset counter if lockout time has passed
+                $attempts = ['count' => 0, 'time' => $now];
+            }
+        }
+        
+        // Only process login on POST request
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            return;
+        }
+
+        // Validate CSRF token
+        if (empty($_POST['csrf_token']) || !CsrfMiddleware::validateToken($_POST['csrf_token'])) {
+            $_SESSION['error'] = 'Invalid request. Please refresh the page and try again.';
+            error_log('CSRF token validation failed');
+            return;
+        }
+
+        // Get and sanitize input
+        $username = trim(htmlspecialchars($_POST['username'] ?? '', ENT_QUOTES, 'UTF-8'));
+        $password = $_POST['password'] ?? '';
+        
+        // Validate input
+        if (empty($username) || empty($password)) {
+            $_SESSION['error'] = 'Username dan password harus diisi.';
+            return;
+        }
+        
+        // Check if user exists and is active
+        $user = $this->userModel->findByUsername($username);
+        
+        $loginFailed = false;
+        if (!$user) {
+            $loginFailed = true;
+        } elseif (!$user['is_active']) {
+            $_SESSION['error'] = 'Akun Anda belum disetujui oleh Admin.';
+            $loginFailed = true;
+        } elseif (!password_verify($password, $user['password'])) {
+            $loginFailed = true;
+        }
+        
+        // Handle failed login
+        if ($loginFailed) {
+            $attempts['count']++;
+            $attempts['time'] = $now;
+            $_SESSION[$lockoutKey] = $attempts;
+            
+            $attemptsLeft = $this->maxLoginAttempts - $attempts['count'];
+            if ($attemptsLeft > 0) {
+                $_SESSION['error'] = "Username atau password salah. Sisa percobaan: $attemptsLeft";
+            } else {
+                $_SESSION['error'] = "Anda telah melebihi batas percobaan login. Silakan coba lagi dalam " . ceil($this->lockoutDuration/60) . " menit.";
+            }
+            return;
+        }
+        
+        // Login successful - create session
+        $sessionToken = $this->userModel->createSession($user['id']);
+        
+        // Set session variables
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['full_name'] = $user['full_name'];
+        $_SESSION['market_assigned'] = $user['market_assigned'] ?? null;
+        $_SESSION['role'] = $user['role'];
+        $_SESSION['is_logged_in'] = true;
+        
+        // Reset login attempts on success
+        unset($_SESSION[$lockoutKey]);
+        
+        // Set secure cookie for persistent login (24 hours)
+        $cookieParams = session_get_cookie_params();
+        setcookie(
+            'session_token',
+            $sessionToken,
+            [
+                'expires' => time() + (24 * 60 * 60),
+                'path' => '/',
+                'domain' => $cookieParams['domain'],
+                'secure' => true,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]
+        );
+        
+        $_SESSION['success'] = 'Login berhasil! Selamat datang, ' . $user['full_name'];
+        $this->redirectToDashboard();
     }
     
     /**
@@ -265,5 +321,23 @@ class AuthController {
         
         return ['valid' => true, 'user' => $user];
     }
+
+    private function validatePassword($password) {
+        if (strlen($password) < 8) {
+            return 'Password minimal 8 karakter';
+        }
+        if (!preg_match('/[A-Z]/', $password)) {
+            return 'Password harus mengandung minimal 1 huruf besar';
+        }
+        if (!preg_match('/[a-z]/', $password)) {
+            return 'Password harus mengandung minimal 1 huruf kecil';
+        }
+        if (!preg_match('/\d/', $password)) {
+            return 'Password harus mengandung minimal 1 angka';
+        }
+        if (!preg_match('/[!@#$%^&*(),.?":{}|<>]/', $password)) {
+            return 'Password harus mengandung minimal 1 karakter khusus';
+        }
+        return true;
+    }
 }
-?>

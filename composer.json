@@ -1,0 +1,12 @@
+{
+    "require-dev": {
+        "phpunit/phpunit": "^12.3"
+    },
+    "require": {
+        "phpoffice/phpspreadsheet": "^1.29",
+        "tecnickcom/tcpdf": "^6.10"
+    },
+    "autoload": {
+        "classmap": ["vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/"]
+    }
+}

@@ -1,13 +1,18 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../src/controllers/AuthController.php';
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../src/models/Database.php';
+require_once __DIR__ . '/../../src/models/Price.php';
+require_once __DIR__ . '/../../src/models/Commodity.php';
 
 $auth = new AuthController();
 $role = $_SESSION['role'] ?? '';
-$user = $auth->requireRole($role === 'admin' ? 'admin' : 'uptd');
+$user = $auth->requireRole('uptd');
 
-$db = new Database();
+$db = Database::getInstance();
+$priceModel = new Price();
+$commodityModel = new Commodity();
+
 $assignedMarket = null;
 if ($role === 'uptd') {
     $assignedMarket = $db->fetchOne("
@@ -18,31 +23,38 @@ if ($role === 'uptd') {
     ", [$_SESSION['user_id']]);
 }
 
-// Include sidebar sesuai role
-if ($role === 'admin') {
-    include __DIR__ . '/sidebar_admin.php';
-} elseif ($role === 'uptd') {
-    include __DIR__ . '/sidebar_uptd.php';
-}
-if (!isset($_SESSION['role'])) {
-    header("Location: /auth/login.php");
-    exit;
+// Path to the consolidated sidebar file
+$sidebarPath = __DIR__ . '/includes/sidebar_uptd.php';
+
+function sanitizeInput($data) {
+    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
 }
 
 // Handle input harga (untuk UPTD saja)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $role === 'uptd') {
     $commodityId = (int) $_POST['commodity_id'];
-    $price = (float) $_POST['price'];
+    $price = sanitizeInput($_POST['price']);
     $marketId = (int) $_POST['market_id'];
     $notes = trim($_POST['notes'] ?? '');
     $uptdId = $_SESSION['user_id'];
-
+    
     try {
-        $db->execute(
-                "INSERT INTO prices (commodity_id, price, market_id, uptd_user_id, notes, status)
-                VALUES (?, ?, ?, ?, ?, 'pending')",
-                [$commodityId, $price, $marketId, $uptdId, $notes]
-            );
+        if (empty($commodityId)) {
+            throw new Exception('Komoditas harus dipilih.');
+        }
+        if (empty($price) || !is_numeric($price) || $price <= 0) {
+            throw new Exception('Harga harus berupa angka positif.');
+        }
+        
+        $data = [
+            'commodity_id' => $commodityId,
+            'price' => $price,
+            'market_id' => $marketId,
+            'uptd_user_id' => $uptdId,
+            'notes' => $notes
+        ];
+        
+        $priceModel->create($data);
         $_SESSION['success'] = "Harga berhasil diinput dan menunggu persetujuan admin.";
     } catch (Exception $e) {
         $_SESSION['error'] = "Gagal menginput harga: " . $e->getMessage();
@@ -51,77 +63,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $role === 'uptd') {
     exit;
 }
 
-// Query tabel harga
 // Ambil data pasar & komoditas
-if ($role === 'uptd') {
-    $markets = $db->fetchAll("
-        SELECT id_pasar, nama_pasar 
-        FROM pasar 
-        WHERE id_pasar = (SELECT market_assigned FROM users WHERE id = ?)
-    ", [$_SESSION['user_id']]);
-} else {
-    $markets = $db->fetchAll("SELECT id_pasar, nama_pasar FROM pasar ORDER BY nama_pasar");
-}
-$commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY name");
+$commodities = $commodityModel->getAll();
 
-// Get prices data
-if ($role === 'uptd') {
-    $prices = $db->fetchAll("
-        SELECT p.id, p.price, p.status, p.created_at, p.notes,
-               c.name AS commodity_name, c.unit,
-               ps.nama_pasar AS market_name,
-               u.full_name as uptd_name
-        FROM prices p
-        JOIN commodities c ON p.commodity_id = c.id
-        JOIN pasar ps ON p.market_id = ps.id_pasar
-        JOIN users u ON p.uptd_user_id = u.id
-        WHERE p.uptd_user_id = ?
-        ORDER BY p.created_at DESC
-    ", [$_SESSION['user_id']]);
-} else {
-    $prices = $db->fetchAll("
-        SELECT p.id, p.price, p.status, p.created_at, p.notes,
-               c.name AS commodity_name, c.unit,
-               ps.nama_pasar AS market_name,
-               u.full_name as uptd_name
-        FROM prices p
-        JOIN commodities c ON p.commodity_id = c.id
-        JOIN pasar ps ON p.market_id = ps.id_pasar
-        JOIN users u ON p.uptd_user_id = u.id
-        ORDER BY p.created_at DESC
-    ");
-}
+// Ambil data harga yang sudah diinput
+$prices = $priceModel->getByUptd($user['id']);
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Bootstrap 5 CSS -->
+    <title>Upload Harga - Siaga Bapok</title>
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <title>Document</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="../../public/assets/images/BANDAR LAMPUNG ICON.png">
+    
     <style>
         :root {
-            --primary-green: #000080;
-            --light-green: #d4edda;
-            --dark-green: #3232b9ff;
+            --primary-blue: #000080;
+            --dark-blue: #3232b9ff;
             --sidebar-width: 250px;
+            --navbar-height: 56px;
         }
-        .sidebar {
+
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            padding-top: var(--navbar-height);
+            transition: margin 0.3s ease-in-out;
+        }
+
+        .navbar {
+            height: var(--navbar-height);
             position: fixed;
             top: 0;
             left: 0;
-            height: 100vh;
-            width: var(--sidebar-width);
-            background: linear-gradient(180deg, var(--primary-green) 0%, var(--dark-green) 100%);
-            color: white;
-            z-index: 1000;
-            overflow-y: auto;
+            width: 100%;
+            z-index: 1030;
+            padding: 0.5rem 1rem;
         }
-        
+
+        .sidebar {
+            width: var(--sidebar-width);
+            height: calc(100vh - var(--navbar-height));
+            position: fixed;
+            left: 0;
+            top: var(--navbar-height);
+            z-index: 1020;
+            transition: transform 0.3s ease-in-out;
+            overflow-y: auto;
+            background: linear-gradient(180deg, var(--primary-blue) 0%, var(--dark-blue) 100%);
+            color: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+
         .sidebar .nav-link {
             color: rgba(255, 255, 255, 0.8);
             padding: 0.75rem 1rem;
@@ -129,20 +129,37 @@ if ($role === 'uptd') {
             margin: 0.25rem 0.5rem;
             transition: all 0.3s ease;
         }
-        
+
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
             background-color: rgba(255, 255, 255, 0.1);
             color: white;
         }
+
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            top: var(--navbar-height);
+            left: 0;
+            width: 100%;
+            height: calc(100% - var(--navbar-height));
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1010;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        
+        .sidebar-backdrop.show {
+            display: block;
+            opacity: 1;
+        }
+
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 2rem;
+            transition: margin 0.3s ease-in-out;
         }
-        .navbar-custom {
-            background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
-        }
-        
+
         .card {
             border: none;
             box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
@@ -153,44 +170,67 @@ if ($role === 'uptd') {
             box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
         }
         
-        .form-control:focus {
-            border-color: var(--primary-green);
-            box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+        @media (min-width: 992px) {
+            .sidebar {
+                transform: translateX(0) !important;
+            }
+            .main-content {
+                margin-left: var(--sidebar-width);
+            }
+            .sidebar-backdrop {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 991.98px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            .main-content {
+                margin-left: 0;
+                width: 100%;
+            }
+            body.sidebar-open {
+                overflow: hidden;
+            }
         }
         
-        .btn-primary {
-            background-color: var(--primary-green);
-            border-color: var(--primary-green);
-        }
-        
-        .btn-primary:hover {
-            background-color: var(--dark-green);
-            border-color: var(--dark-green);
-        }
-        
-        .status-pending {
-            color: #ffc107;
-        }
-        
-        .status-approved {
-            color: #28a745;
-        }
-        
-        .status-rejected {
-            color: #dc3545;
-        }
+        .status-pending { color: #ffc107; }
+        .status-approved { color: #28a745; }
+        .status-rejected { color: #dc3545; }
     </style>
 </head>
-<body class="bg-light">
-    <!--main content-->
-    <div class="main-content">
-        <!-- header -->
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container-fluid">
+            <button class="navbar-toggler" type="button" id="sidebarToggle" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle navigation">
+                <i class="bi bi-list" style="font-size: 1.5rem;"></i>
+            </button>
+            <a class="navbar-brand ms-2" href="#">Upload Harga</a>
+            <div class="ms-auto d-flex align-items-center">
+                <span class="text-white me-3 d-none d-sm-inline">
+                    <i class="bi bi-person-circle me-1"></i>
+                    <?php echo htmlspecialchars($user['username'] ?? 'UPTD'); ?>
+                </span>
+                <a href="../logout.php" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+    
+    <?php include $sidebarPath; ?>
+
+    <main class="main-content">
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card bg-primary text-white">
                     <div class="card-body">
                         <h1 class="h3 mb-0">
-                            <i class="bi bi-people me-2"></i>
+                            <i class="bi bi-upload me-2"></i>
                             Upload Harga
                         </h1>
                         <p class="mb-0 mt-2 opacity-75">
@@ -201,118 +241,177 @@ if ($role === 'uptd') {
             </div>
         </div>
 
-    <div class="row g-4">
-        <?php if ($role === 'uptd'): ?>
-        <!-- Form Input Harga -->
-        <div class="col-lg-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <i class="bi bi-plus-circle"></i> Input Harga Baru
-                </div>
-                <div class="card-body">
-                    <?php if (!empty($_SESSION['success'])): ?>
-                        <div class="alert alert-success"><?= $_SESSION['success']; unset($_SESSION['success']); ?></div>
-                    <?php elseif (!empty($_SESSION['error'])): ?>
-                        <div class="alert alert-danger"><?= $_SESSION['error']; unset($_SESSION['error']); ?></div>
-                    <?php endif; ?>
+        <?php if (!empty($_SESSION['success'])): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-2"></i>
+                <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
 
-                    <form method="POST">
-                        <div class="mb-3">
-                            <label class="form-label">Pilih Komoditas</label>
-                            <select name="commodity_id" class="form-select" required>
-                                <option value="" disabled selected>-- Pilih Komoditas --</option>
-                                <?php foreach ($commodities as $c): ?>
-                                    <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?> (<?= htmlspecialchars($c['unit']) ?>)</option>
-                                <?php endforeach; ?>
-                            </select>
-
-
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Harga per Satuan</label>
-                            <div class="input-group">
-                                <span class="input-group-text">Rp</span>
-                                <input type="number" name="price" class="form-control" min="1" max="99999" required>
-                            </div>
-                        </div>
-                        <?php if ($role === 'admin'): ?>
+        <?php if (!empty($_SESSION['error'])): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+        
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-plus-circle"></i> Input Harga Baru
+                    </div>
+                    <div class="card-body">
+                        <form method="POST">
                             <div class="mb-3">
-                                <label class="form-label">Pilih Pasar</label>
-                                <select name="market_id" class="form-select" required>
-                                    <option value="" selected disabled>-- Pilih --</option>
-                                    <?php foreach ($markets as $m): ?>
-                                        <option value="<?= $m['id_pasar'] ?>">
-                                            <?= htmlspecialchars($m['nama_pasar']) ?>
-                                        </option>
+                                <label class="form-label">Pilih Komoditas</label>
+                                <select name="commodity_id" class="form-select" required>
+                                    <option value="" disabled selected>-- Pilih Komoditas --</option>
+                                    <?php foreach ($commodities as $c): ?>
+                                        <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?> (<?= htmlspecialchars($c['unit']) ?>)</option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                        <?php else: ?>
-                            <!-- UPTD: pasar otomatis sesuai assigned -->
+                            <div class="mb-3">
+                                <label class="form-label">Harga per Satuan</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">Rp</span>
+                                    <input type="number" name="price" id="price" class="form-control" min="1" max="99999" required>
+                                </div>
+                            </div>
                             <input type="hidden" name="market_id" value="<?= $assignedMarket['id_pasar'] ?>">
                             <div class="mb-3">
                                 <label class="form-label">Pasar</label>
                                 <input type="text" class="form-control" value="<?= htmlspecialchars($assignedMarket['nama_pasar']) ?>" readonly>
                             </div>
-                        <?php endif; ?>
-                        <div class="mb-3">
-                            <label class="form-label">Catatan (Opsional)</label>
-                            <textarea name="notes" class="form-control" rows="2"></textarea>
-                        </div>
-                        <button class="btn btn-primary w-100"><i class="bi bi-send"></i> Simpan</button>
-                    </form>
+                            <div class="mb-3">
+                                <label class="form-label">Catatan (Opsional)</label>
+                                <textarea name="notes" class="form-control" rows="2"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-send"></i> Simpan</button>
+                        </form>
+                    </div>
                 </div>
             </div>
-        </div>
-        <?php endif; ?>
 
-        <!-- Tabel Harga -->
-        <div class="col-lg-8 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-secondary text-white">
-                    <i class="bi bi-table"></i> Daftar Harga <?= $role === 'uptd' ? "Anda" : "Semua UPTD" ?>
-                </div>
-                <div class="card-body table-responsive">
-                    <table class="table table-bordered table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <?php if ($role === 'admin'): ?><th>UPTD</th><?php endif; ?>
-                                <th>Komoditas</th>
-                                <th>Harga</th>
-                                <th>Pasar</th>
-                                <th>Tanggal</th>
-                                <th>Status</th>
-                                <?php if ($role === 'admin'): ?><th>Aksi</th><?php endif; ?>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php if (!empty($prices)): ?>
-                            <?php foreach ($prices as $p): ?>
-                            <tr>
-                                <?php if ($role === 'admin'): ?><td><?= htmlspecialchars($p['uptd_name']) ?></td><?php endif; ?>
-                                <td><?= htmlspecialchars($p['commodity_name']) ?> (<?= htmlspecialchars($p['unit']) ?>)</td>
-                                <td>Rp <?= number_format($p['price'], 0, ',', '.') ?></td>
-                                <td><?= htmlspecialchars($p['market_name']) ?></td>
-                                <td><?= date('d-m-Y', strtotime($p['created_at'])) ?></td>
-                                <td class="status-<?= strtolower($p['status']) ?>"><?= ucfirst($p['status']) ?></td>
-                                <?php if ($role === 'admin'): ?>
-                                <td>
-                                    <a href="approve.php?id=<?= $p['id'] ?>&status=approved" class="btn btn-success btn-sm"><i class="bi bi-check"></i></a>
-                                    <a href="approve.php?id=<?= $p['id'] ?>&status=rejected" class="btn btn-danger btn-sm"><i class="bi bi-x"></i></a>
-                                </td>
-                                <?php endif; ?>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr><td colspan="<?= $role === 'admin' ? 7 : 6 ?>" class="text-center">Belum ada data harga</td></tr>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
+            <div class="col-lg-8">
+                <div class="card shadow-sm border-0 rounded-3">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-table me-2"></i> Daftar Harga Terakhir Anda</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover table-bordered align-middle mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Tanggal</th>
+                                        <th>Komoditas</th>
+                                        <th>Harga</th>
+                                        <th>Status</th>
+                                        <th>Catatan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($prices)): ?>
+                                        <?php foreach ($prices as $p): ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars(date('d M Y', strtotime($p['created_at']))) ?></td>
+                                                <td><?= htmlspecialchars($p['commodity_name']) ?> <span class="text-muted">(<?= htmlspecialchars($p['unit']) ?>)</span></td>
+                                                <td class="fw-bold text-primary">Rp <?= number_format($p['price'], 0, ',', '.') ?></td>
+                                                <td>
+                                                    <?php
+                                                    $statusClass = '';
+                                                    $statusIcon = '';
+                                                    $statusText = '';
+                                                    switch ($p['status']) {
+                                                        case 'pending': $statusClass = 'bg-warning text-dark'; $statusIcon = 'bi-clock-history'; $statusText = 'Menunggu'; break;
+                                                        case 'approved': $statusClass = 'bg-success'; $statusIcon = 'bi-check-circle'; $statusText = 'Disetujui'; break;
+                                                        case 'rejected': $statusClass = 'bg-danger'; $statusIcon = 'bi-x-circle'; $statusText = 'Ditolak'; break;
+                                                    }
+                                                    ?>
+                                                    <span class="badge <?= $statusClass ?>">
+                                                        <i class="bi <?= $statusIcon ?> me-1"></i>
+                                                        <?= $statusText ?>
+                                                    </span>
+                                                </td>
+                                                <td><?= htmlspecialchars($p['notes'] ?? '-') ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5" class="text-center py-4 text-muted">
+                                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                                Belum ada data harga.
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
+    </main>
     
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        function setupSidebarToggle() {
+            const sidebar = document.getElementById('sidebar');
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            
+            if (!sidebar || !sidebarToggle) {
+                console.error("Sidebar or toggle button not found. Please check your HTML IDs.");
+                return;
+            }
+
+            let backdrop = document.querySelector('.sidebar-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.className = 'sidebar-backdrop';
+                document.body.appendChild(backdrop);
+            }
+            
+            const toggleSidebar = () => {
+                const isShown = sidebar.classList.toggle('show');
+                document.body.classList.toggle('sidebar-open');
+                
+                if (isShown) {
+                    backdrop.classList.add('show');
+                } else {
+                    backdrop.classList.remove('show');
+                }
+            };
+            
+            sidebarToggle.addEventListener('click', toggleSidebar);
+            backdrop.addEventListener('click', toggleSidebar);
+
+            window.addEventListener('resize', function() {
+                if (window.innerWidth >= 992) {
+                    sidebar.classList.remove('show');
+                    document.body.classList.remove('sidebar-open');
+                    backdrop.classList.remove('show');
+                }
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            setupSidebarToggle();
+            
+            // Auto-hide alerts
+            setTimeout(function() {
+                const alerts = document.querySelectorAll('.alert');
+                alerts.forEach(alert => {
+                    const bsAlert = bootstrap.Alert.getInstance(alert) || new bootstrap.Alert(alert);
+                    if (bsAlert) {
+                        bsAlert.close();
+                    }
+                });
+            }, 5000);
+        });
+    </script>
 </body>
 </html>

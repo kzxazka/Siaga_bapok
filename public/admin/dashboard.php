@@ -3,25 +3,21 @@ session_start();
 require_once __DIR__ . '/../../src/controllers/AuthController.php';
 require_once __DIR__ . '/../../src/models/Price.php';
 require_once __DIR__ . '/../../src/models/User.php';
+require_once __DIR__ . '/../../src/models/Database.php';
 
-// Include sidebar based on user role
-if ($_SESSION['role'] === 'admin') {
-    include __DIR__ . '/sidebar_admin.php';
-} elseif ($_SESSION['role'] === 'uptd') {
-    include __DIR__ . '/sidebar_uptd.php';
+function sanitizeInput($data) {
+    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
 }
 
+//cek autentikasi dan peran pengguna
 $auth = new AuthController();
 $user = $auth->requireRole('admin');
 $priceModel = new Price();
 $userModel = new User();
-
-$trends1Day = $priceModel->getPriceTrends(1);
-$trends7Days = $priceModel->getPriceTrends(7);
-$trends30Days = $priceModel->getPriceTrends(30);
+$db = Database::getInstance();
 
 // Get latest prices
-$latestPrices = $priceModel->getLatestPrices();
+$latestPrices = $priceModel->getLatestPricesByCommodity(10); // 10 is the limit;
 
 // Get top increasing prices (7 days)
 $topIncreasing = $priceModel->getTopIncreasingPrices(7, 5);
@@ -30,7 +26,6 @@ $topIncreasing = $priceModel->getTopIncreasingPrices(7, 5);
 $stats = $priceModel->getStatistics();
 
 // Database connection
-$db = new Database();
 $totalPasar = $db->fetchOne("SELECT COUNT(*) as count FROM pasar")['count'];
 $totalKomoditas = $db->fetchOne("SELECT COUNT(*) as count FROM commodities")['count'];
 $totalHarga = $db->fetchOne("SELECT COUNT(*) as count FROM prices")['count'];
@@ -80,16 +75,24 @@ $userStats = $userModel->getUserStats();
 $aiInsightPeriod = isset($_GET['ai_period']) ? sanitizeInput($_GET['ai_period']) : 'weekly';
 
 // Get pending approvals count
-$pendingCount = count($priceModel->getAll('pending'));
+$pendingCount = $stats['pending_count'];
 
 // Get slider images
-$sliderDir = __DIR__ . '/../../assets/img/slider/';
+$sliderDir = __DIR__ . '/../../public/assets/img/slider/';
 $sliderImages = [];
 if (is_dir($sliderDir)) {
     $sliderImages = array_diff(scandir($sliderDir), array('.', '..'));
 }
 
 $pageTitle = 'Dashboard Admin - Siaga Bapok';
+
+// Ambil semua daftar komoditas dari database untuk dropdown filter di grafik
+$all_commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY name ASC");
+
+// Ambil data chart untuk inisialisasi
+$trends1Day = $priceModel->getPriceTrends(1);
+$trends7Days = $priceModel->getPriceTrends(7);
+$trends30Days = $priceModel->getPriceTrends(30);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -98,33 +101,55 @@ $pageTitle = 'Dashboard Admin - Siaga Bapok';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $pageTitle; ?></title>
     
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="../../public/assets/images/BANDAR LAMPUNG ICON.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    
+    <link rel="stylesheet" href="../../public/css/admin-sidebar.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
     <style>
         :root {
-            --primary-green: #000080;
-            --light-green: #d4edda;
-            --dark-green: #3232b9ff;
+            --primary-blue: #000080;
+            --dark-blue: #3232b9ff;
             --sidebar-width: 250px;
+            --navbar-height: 56px;
         }
         
         body {
             background-color: #f8f9fa;
+            min-height: 100vh;
+            padding-top: var(--navbar-height);
+            transition: margin 0.3s ease-in-out;
         }
-        
-        .sidebar {
+
+        /*NAVBAR*/
+        .navbar {
+            height: var(--navbar-height);
             position: fixed;
             top: 0;
             left: 0;
-            height: 100vh;
+            width: 100%;
+            z-index: 1030;
+            padding: 0.5rem 1rem;
+        }
+        
+        /*SIDEBAR*/
+        .sidebar {
             width: var(--sidebar-width);
-            background: linear-gradient(180deg, var(--primary-green) 0%, var(--dark-green) 100%);
-            color: white;
-            z-index: 1000;
+            height: calc(100vh - var(--navbar-height));
+            position: fixed;
+            left: 0;
+            top: var(--navbar-height);
+            z-index: 1020;
+            transition: transform 0.3s ease-in-out;
             overflow-y: auto;
+            background: linear-gradient(180deg, var(--primary-blue) 0%, var(--dark-blue) 100%);
+            color: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
         }
         
         .sidebar .nav-link {
@@ -141,9 +166,30 @@ $pageTitle = 'Dashboard Admin - Siaga Bapok';
             color: white;
         }
         
+        /*MAIN CONTENT*/
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 2rem;
+            transition: margin 0.3s ease-in-out;
+        }
+
+        /*backdrop for mobile*/
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            top: var(--navbar-height);
+            left: 0;
+            width: 100%;
+            height: calc(100% - var(--navbar-height));
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1010;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        
+        .sidebar-backdrop.show {
+            display: block;
+            opacity: 1;
         }
         
         .card {
@@ -159,7 +205,28 @@ $pageTitle = 'Dashboard Admin - Siaga Bapok';
         .chart-container {
             position: relative;
             height: 400px;
-            margin-bottom: 2rem;
+            width: 100%;
+        }
+
+        #noDataMessage {
+            display: none;
+            padding: 2rem;
+            text-align: center;
+            color: #6c757d;
+            background-color: #f8f9fa;
+            border-radius: 0.25rem;
+            margin-top: 1rem;
+        }
+
+        #noDataMessage i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        #chartSection {
+            position: relative;
+            height: 400px; /* tinggi tetap biar chart gak menjulang */
+            width: 100%;
         }
         
         .stats-card {
@@ -190,33 +257,80 @@ $pageTitle = 'Dashboard Admin - Siaga Bapok';
             border-color: var(--primary-green);
             background-color: var(--light-green);
         }
-        
-        @media (max-width: 768px) {
+
+        /* Styles for the new commodity legends */
+        .commodity-legends {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .commodity-legend-item {
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 20px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        .commodity-legend-item.active {
+            background-color: var(--primary-blue);
+            color: white;
+            border-color: var(--primary-blue);
+        }
+
+        /* Desktop Styles (lg and up) */
+        @media (min-width: 992px) {
+            .sidebar {
+                transform: translateX(0) !important;
+            }
+            .main-content {
+                margin-left: var(--sidebar-width);
+            }
+            .sidebar-backdrop {
+                display: none !important;
+            }
+        }
+
+        /* Mobile Styles (below lg) */
+        @media (max-width: 991.98px) {
             .sidebar {
                 transform: translateX(-100%);
-                transition: transform 0.3s ease;
             }
-            
             .sidebar.show {
                 transform: translateX(0);
             }
-            
             .main-content {
                 margin-left: 0;
-                padding: 1rem;
+                width: 100%;
+            }
+            body.sidebar-open {
+                overflow: hidden;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Main Content -->
-    <div class="main-content">
-        <!-- Mobile Menu Toggle -->
-        <button class="btn btn-primary d-md-none mb-3" type="button" onclick="toggleSidebar()">
-            <i class="bi bi-list"></i>
-        </button>
-        
-        <!-- Page Header -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container-fluid">
+            <button class="navbar-toggler" type="button" id="sidebarToggle" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle navigation">
+                <i class="bi bi-list" style="font-size: 1.5rem;"></i>
+            </button>
+            <a class="navbar-brand ms-2" href="#">Dashboard Admin</a>
+            <div class="ms-auto d-flex align-items-center">
+                <span class="text-white me-3 d-none d-sm-inline">
+                    <i class="bi bi-person-circle me-1"></i>
+                    <?php echo htmlspecialchars($_SESSION['user']['username'] ?? 'Admin'); ?>
+                </span>
+                <a href="../logout.php" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
+    
+    <main class="main-content">
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card bg-primary text-white">
@@ -243,552 +357,628 @@ $pageTitle = 'Dashboard Admin - Siaga Bapok';
             </div>
         </div>
 
-        <!-- AI Insight Section -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-robot me-2"></i> Analisis AI - Insight Harga Komoditas
-                        </h5>
-                        <div class="btn-group">
-                            <a href="?ai_period=weekly" class="btn btn-sm <?= $aiInsightPeriod === 'weekly' ? 'btn-light' : 'btn-outline-light' ?>">Mingguan</a>
-                            <a href="?ai_period=monthly" class="btn btn-sm <?= $aiInsightPeriod === 'monthly' ? 'btn-light' : 'btn-outline-light' ?>">Bulanan</a>
-                            <a href="?ai_period=6months" class="btn btn-sm <?= $aiInsightPeriod === '6months' ? 'btn-light' : 'btn-outline-light' ?>">6 Bulan</a>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div id="ai-insight-container">
-                            <div class="text-center py-4">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Memuat analisis AI...</p>
-                            </div>
-                        </div>
-                    </div>
+    <?php if (isset($_SESSION['success'])): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>
+            <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+    <?php if (isset($_SESSION['error'])): ?>
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card stats-card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-check-circle text-success fs-1 mb-2"></i>
+                    <h3 class="text-success"><?php echo $stats['approved_count']; ?></h3>
+                    <p class="mb-0">Data Disetujui</p>
                 </div>
             </div>
         </div>
-
-        <!-- Alerts -->
-        <?php if (isset($_SESSION['success'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <i class="bi bi-check-circle me-2"></i>
-                <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
-
-        <?php if (isset($_SESSION['error'])): ?>
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
-
-        <!-- Statistics Cards -->
-        <div class="row mb-4">
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="card stats-card text-center h-100">
-                    <div class="card-body">
-                        <i class="bi bi-check-circle text-success fs-1 mb-2"></i>
-                        <h3 class="text-success"><?php echo $stats['approved_count']; ?></h3>
-                        <p class="mb-0">Data Disetujui</p>
-                    </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card stats-card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-clock-history text-warning fs-1 mb-2"></i>
+                    <h3 class="text-warning"><?php echo $stats['pending_count']; ?></h3>
+                    <p class="mb-0">Menunggu Approval</p>
                 </div>
             </div>
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="card stats-card text-center h-100">
-                    <div class="card-body">
-                        <i class="bi bi-clock-history text-warning fs-1 mb-2"></i>
-                        <h3 class="text-warning"><?php echo $stats['pending_count']; ?></h3>
-                        <p class="mb-0">Menunggu Approval</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="card stats-card text-center h-100">
-                    <div class="card-body">
-                        <i class="bi bi-box text-success fs-1 mb-2"></i>
-                        <h3 class="text-success"><?= $totalKomoditas ?></h3>
-                        <p class="mb-0">Total Komoditas</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="card stats-card text-center h-100">
-                    <div class="card-body">
-                        <i class="bi bi-shop text-primary fs-1 mb-2"></i>
-                        <h3 class="text-primary"><?= $totalPasar ?></h3>
-                        <p class="mb-0">Total Pasar</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="card stats-card text-center h-100">
-                    <div class="card-body">
-                        <i class="bi bi-clipboard-data text-warning fs-1 mb-2"></i>
-                        <h3 class="text-warning"><?= $totalHarga ?></h3>
-                        <p class="mb-0">Total Input Harga</p>
-                    </div>
-                </div>
-            </div>
-
         </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card stats-card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-box text-success fs-1 mb-2"></i>
+                    <h3 class="text-success"><?= $totalKomoditas ?></h3>
+                    <p class="mb-0">Total Komoditas</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card stats-card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-shop text-primary fs-1 mb-2"></i>
+                    <h3 class="text-primary"><?= $totalPasar ?></h3>
+                    <p class="mb-0">Total Pasar</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        <!-- Monthly Price Trends Chart -->
-        <div class="row mb-5" id="chartSection">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h4 class="card-title mb-0">
-                            <i class="bi bi-graph-up me-2"></i>
-                            Grafik Pergerakan Harga Komoditas
-                        </h4>
-                    </div>
-                    <div class="card-body">
-                        <!-- Period Selection -->
-                        <div class="period-buttons mb-3">
-                            <h6>Pilih Periode:</h6>
-                            <button class="btn btn-outline-primary active" data-period="1" onclick="changePeriod(1)">
-                                1 Hari Terakhir
+    <!-- Grafik Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">Grafik Pergerakan Harga Komoditas</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label for="periode" class="form-label">Periode</label>
+                            <select id="periode" class="form-select">
+                                <option value="1">1 Hari Terakhir</option>
+                                <option value="7" selected>7 Hari Terakhir</option>
+                                <option value="30">30 Hari Terakhir</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="commodity_id" class="form-label">Komoditas</label>
+                            <select name="commodity_id" id="commodity_id" class="form-select" required>
+                                <option value="all" selected>Semua Komoditas</option>
+                                <?php 
+                                $commodities = $db->fetchAll("SELECT id, name, unit FROM commodities ORDER BY name");
+                                foreach ($commodities as $c): 
+                                ?>
+                                    <option value="<?= $c['id'] ?>">
+                                        <?= htmlspecialchars($c['name']) ?> (<?= htmlspecialchars($c['unit']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end gap-2">
+                            <button id="btnTampil" class="btn btn-primary flex-grow-1">
+                                <i class="bi bi-funnel me-1"></i> Tampilkan
                             </button>
-                            <button class="btn btn-outline-primary" data-period="7" onclick="changePeriod(7)">
-                                7 Hari Terakhir
-                            </button>
-                            <button class="btn btn-outline-primary" data-period="30" onclick="changePeriod(30)">
-                                30 Hari Terakhir
+                            <button id="btnPrintChart" class="btn btn-outline-secondary" title="Cetak Grafik">
+                                <i class="bi bi-printer"></i>
                             </button>
                         </div>
-                        
-                        <!-- Chart Container -->
-                        <div class="chart-container">
-                            <canvas id="priceChart"></canvas>
-                        </div>
-                        
-                        <div class="text-center mt-3">
-                            <small class="text-muted">
-                                <i class="bi bi-info-circle me-1"></i>
-                                Grafik menampilkan rata-rata harga per hari dari semua pasar
-                            </small>
-                        </div>
                     </div>
+
+                    <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
+                        <canvas id="chartHarga" style="width: 100%; height: 100%;"></canvas>
+                    </div>
+                    <div id="noDataMessage" class="text-center py-5">
+                        <i class="bi bi-graph-up" style="font-size: 3rem; color: #6c757d;"></i>
+                        <p class="mt-3">Tidak ada data yang tersedia untuk periode yang dipilih</p>
+                    </div>
+                    
+                    <small class="text-muted d-block mt-2">
+                        <i class="bi bi-info-circle me-1"></i> Grafik menampilkan rata-rata harga per hari
+                    </small>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="row mb-4">
-            <!-- Significant Price Changes -->
-            <div class="col-lg-8 mb-4">
-                <div class="card">
-                    <div class="card-header bg-warning text-dark">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            Komoditas dengan Perubahan Harga Paling Signifikan
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <?php if (!empty($significantChanges)): ?>
-                            <div class="table-responsive">
-                                <table class="table table-striped table-hover">
-                                    <thead class="table-dark">
-                                        <tr>
-                                            <th>Komoditas</th>
-                                            <th>Harga Sebelum</th>
-                                            <th>Harga Sekarang</th>
-                                            <th>Perubahan</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach (array_slice($significantChanges, 0, 8) as $change): ?>
-                                            <tr>
-                                                <td>
-                                                    <strong><?php echo htmlspecialchars($change['name']); ?></strong>
-                                                </td>
-                                                <td><?php echo formatRupiah($change['previous_price']); ?></td>
-                                                <td><?php echo formatRupiah($change['current_price']); ?></td>
-                                                <td>
-                                                    <?php
-                                                    $percentage = (($change['current_price'] - $change['previous_price']) / $change['previous_price']) * 100;
-                                                    $badgeClass = $percentage > 0 ? 'bg-danger' : 'bg-success';
-                                                    $icon = $percentage > 0 ? 'bi-arrow-up' : 'bi-arrow-down';
-                                                    ?>
-                                                    <span class="badge <?php echo $badgeClass; ?>">
-                                                        <i class="bi <?php echo $icon; ?> me-1"></i>
-                                                        <?php echo ($percentage > 0 ? '+' : '') . number_format($percentage, 1); ?>%
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <?php if (abs($percentage) > 20): ?>
-                                                        <span class="badge bg-danger">Sangat Signifikan</span>
-                                                    <?php elseif (abs($percentage) > 10): ?>
-                                                        <span class="badge bg-warning text-dark">Signifikan</span>
-                                                    <?php else: ?>
-                                                        <span class="badge bg-info">Normal</span>
-                                                    <?php endif; ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php else: ?>
-                            <div class="text-center py-4">
-                                <i class="bi bi-graph-up fs-1 text-muted mb-3"></i>
-                                <h5 class="text-muted">Tidak ada perubahan signifikan</h5>
-                                <p class="text-muted">Semua harga komoditas dalam kondisi stabil.</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
+    <!-- Aksi Cepat Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-lightning me-2 text-warning"></i>
+                        Aksi Cepat
+                    </h5>
                 </div>
-            </div>
-
-            <!-- Image Slider Management -->
-            <div class="col-lg-4 mb-4">
-                <div class="card">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-images me-2"></i>
-                            Kelola Gambar Slider
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <!-- Upload Area -->
-                        <form method="POST" enctype="multipart/form-data" class="mb-3">
-                            <input type="hidden" name="action" value="upload_image">
-                            <div class="upload-area" onclick="document.getElementById('slider_image').click()">
-                                <i class="bi bi-cloud-upload fs-1 text-muted mb-2"></i>
-                                <p class="mb-0">Klik untuk upload gambar</p>
-                                <small class="text-muted">JPG, PNG, max 2MB</small>
-                            </div>
-                            <input type="file" id="slider_image" name="slider_image" 
-                                   accept="image/*" style="display: none;" onchange="this.form.submit()">
-                        </form>
-                        
-                        <!-- Current Images -->
-                        <div class="row g-2">
-                            <?php foreach ($sliderImages as $image): ?>
-                                <div class="col-6">
-                                    <div class="position-relative">
-                                        <img src="../../assets/img/slider/<?php echo $image; ?>" 
-                                             class="slider-image w-100" alt="Slider Image">
-                                        <form method="POST" class="position-absolute top-0 end-0 m-1">
-                                            <input type="hidden" name="action" value="delete_image">
-                                            <input type="hidden" name="image_name" value="<?php echo $image; ?>">
-                                            <button type="submit" class="btn btn-danger btn-sm" 
-                                                    onclick="return confirm('Hapus gambar ini?')">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                            
-                            <?php if (empty($sliderImages)): ?>
-                                <div class="col-12 text-center py-3">
-                                    <i class="bi bi-images text-muted fs-1 mb-2"></i>
-                                    <p class="text-muted mb-0">Belum ada gambar slider</p>
-                                </div>
-                            <?php endif; ?>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <a href="approve.php" class="btn btn-warning w-100 text-start">
+                                <i class="bi bi-check-circle me-2"></i>
+                                Approve Data
+                                <?php if ($pendingCount > 0): ?>
+                                    <span class="badge bg-dark float-end mt-1"><?= $pendingCount ?></span>
+                                <?php endif; ?>
+                            </a>
                         </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="bi bi-lightning me-2"></i>
-                            Aksi Cepat
-                        </h5>
-                        <div class="row g-3">
-                            <div class="col-md-3">
-                                <a href="approve.php" class="btn btn-warning w-100">
-                                    <i class="bi bi-check-circle me-2"></i>
-                                    Approve Data
-                                    <?php if ($pendingCount > 0): ?>
-                                        <span class="badge bg-dark ms-2"><?php echo $pendingCount; ?></span>
-                                    <?php endif; ?>
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="admin/manageUser.php?action=create" class="btn btn-primary w-100">
-                                    <i class="bi bi-person-plus me-2"></i>
-                                    Tambah User
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="markets.php" class="btn btn-success w-100">
-                                    <i class="bi bi-shop me-2"></i>
-                                    Kelola Pasar
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="commodities.php" class="btn btn-info w-100">
-                                    <i class="bi bi-basket me-2"></i>
-                                    Kelola Komoditas
-                                </a>
-                            </div>
+                        <div class="col-md-3">
+                            <a href="manageUser.php" class="btn btn-primary w-100 text-start">
+                                <i class="bi bi-people me-2"></i>
+                                Kelola User
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="markets.php" class="btn btn-success w-100 text-start">
+                                <i class="bi bi-shop me-2"></i>
+                                Kelola Pasar
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="commodities.php" class="btn btn-info w-100 text-start">
+                                <i class="bi bi-basket me-2"></i>
+                                Kelola Komoditas
+                            </a>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Bootstrap 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <script>
-        // Monthly trends data
-        const priceData = {
-            1: <?php echo json_encode($trends1Day); ?>,
-            7: <?php echo json_encode($trends7Days); ?>,
-            30: <?php echo json_encode($trends30Days); ?>
-        };
+    <!-- Chart Controls
+    <div class="container mt-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Grafik Harga Komoditas</h5>
+                <div class="d-flex gap-2">
+                    <select id="periodSelect" class="form-select form-select-sm" style="width: auto;">
+                        <option value="1">1 Hari Terakhir</option>
+                        <option value="7" selected>7 Hari Terakhir</option>
+                        <option value="30">30 Hari Terakhir</option>
+                    </select>
+                    <button id="scaleToggle" class="btn btn-sm btn-outline-secondary">
+                        Skala Logaritmik
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <select id="commoditySelect" class="form-select" multiple="multiple">
+                        <!-- Options will be populated by JavaScript 
+                    </select>
+                </div>
+                <div id="chartContainer">
+                    <canvas id="chartHarga" height="400"></canvas>
+                </div>
+            </div>
+        </div>
+    </div> -->
+</main>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let myChart;
+    
+    const formatCurrency = (value) => {
+        return 'Rp ' + value.toLocaleString('id-ID');
+    };
+
+    async function fetchChartData(period, commodityId) {
+        try {
+            const url = `get_chart_data.php?period=${period}&id=${commodityId}`;
+            console.log('Fetching from:', url);
+            
+            const response = await fetch(url);
+            const text = await response.text();
+            console.log('Raw response:', text);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            // Handle empty or invalid JSON responses
+            if (!text || text.trim() === '') {
+                console.log('Empty response, returning empty array');
+                return [];
+            }
+            
+            try {
+                // Handle case where response is just '[]' or '[][]'
+                const trimmedText = text.trim();
+                if (trimmedText === '[]' || trimmedText === '[][]') {
+                    console.log('Empty array response');
+                    return [];
+                }
+                
+                const data = JSON.parse(trimmedText);
+                console.log('Parsed data:', data);
+                return data;
+            } catch (jsonError) {
+                console.warn('Invalid JSON response, treating as no data');
+                console.warn('Response text:', text);
+                return [];
+            }
+        } catch (error) {
+            console.error('Error fetching chart data:', error);
+            throw error; // Re-throw to be handled by the caller
+        }
+    }
+
+    function renderChart(data) {
+        console.log('Data received in renderChart:', data);
         
-        let currentChart = null;
-        let currentPeriod = 1;
-        
-        // Initialize chart
-        function initChart() {
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            updateChart(1);
+        const ctx = document.getElementById('chartHarga');
+        if (!ctx) {
+            console.error('Canvas element not found');
+            return;
         }
         
-        // Update chart based on period
-        function updateChart(period) {
-            const data = priceData[period];
+        const canvas = ctx.getContext('2d');
+        const noDataMessage = document.getElementById('noDataMessage');
+        
+        // Hapus chart lama jika ada
+        if (window.myChart) {
+            window.myChart.destroy();
+        }
+        
+        // Clear canvas
+        canvas.clearRect(0, 0, ctx.width, ctx.height);
+        
+        // Sembunyikan pesan no data
+        if (noDataMessage) {
+            noDataMessage.classList.add('d-none');
+        }
+        
+        // Tampilkan canvas
+        ctx.style.display = 'block';
+        
+        // Check if there's data to display
+        if (!data || !data.labels || data.labels.length === 0 || !data.datasets || data.datasets.length === 0 || 
+            !data.datasets.some(ds => ds.data && ds.data.some(val => val !== null && val !== undefined))) {
             
-            if (!data || data.length === 0) {
-                showNoDataMessage();
-                return;
-            }
-            
-            // Group data by commodity
-            const commodityData = {};
-            data.forEach(item => {
-                if (!commodityData[item.commodity_name]) {
-                    commodityData[item.commodity_name] = [];
-                }
-                commodityData[item.commodity_name].push({
-                    date: item.price_date,
-                    price: parseFloat(item.avg_price)
-                });
-            });
-            
-            // Get unique dates and sort them
-            const dates = [...new Set(data.map(item => item.price_date))].sort();
-            
-            // Create datasets for each commodity
-            const datasets = Object.keys(commodityData).slice(0, 6).map((commodity, index) => {
-                const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
-                
-                const commodityPrices = dates.map(date => {
-                    const item = commodityData[commodity].find(d => d.date === date);
-                    return item ? item.price : null;
-                });
-                
-                return {
-                    label: commodity,
-                    data: commodityPrices,
-                    borderColor: colors[index],
-                    backgroundColor: colors[index] + '20',
-                    tension: 0.1,
-                    fill: false
-                };
-            });
-            
-            // Destroy existing chart
-            if (currentChart) {
-                currentChart.destroy();
-            }
-            
-            // Create new chart
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            currentChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates.map(date => {
-                        const d = new Date(date);
-                        return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-                    }),
-                    datasets: datasets
+            // Draw "No Data" message on canvas
+            canvas.font = '16px Arial';
+            canvas.textAlign = 'center';
+            canvas.textBaseline = 'middle';
+            canvas.fillStyle = '#666';
+            canvas.fillText('Tidak ada data yang tersedia', ctx.width / 2, ctx.height / 2);
+            return;
+        }
+        
+        // Format data untuk Chart.js
+        const chartData = {
+            labels: data.labels,
+            datasets: data.datasets.map(dataset => ({
+                label: dataset.label,
+                data: dataset.data,
+                borderColor: dataset.borderColor || '#3498db',
+                backgroundColor: dataset.backgroundColor || 'rgba(52, 152, 219, 0.1)',
+                borderWidth: 2,
+                tension: 0.2,
+                fill: true,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: dataset.borderColor || '#3498db',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2
+            }))
+        };
+        
+        // Buat chart baru
+        window.myChart = new Chart(canvas, {
+            type: 'line',
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: `Pergerakan Harga ${period} Hari Terakhir`
-                        },
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: false,
-                            ticks: {
-                                callback: function(value) {
-                                    return 'Rp ' + value.toLocaleString('id-ID');
-                                }
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: Rp ${context.parsed.y.toLocaleString('id-ID')}`;
                             }
                         }
                     },
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 12
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            callback: function(value) {
+                                return 'Rp ' + value.toLocaleString('id-ID');
+                            }
+                        }
                     }
                 }
-            });
-        }
-        
-        // Change period
-        function changePeriod(period) {
-            currentPeriod = period;
-            
-            // Update button states
-            document.querySelectorAll('.period-buttons .btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            document.querySelector(`[data-period="${period}"]`).classList.add('active');
-            
-            // Update chart
-            updateChart(period);
-        }
-        
-        // Show no data message
-        function showNoDataMessage() {
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            if (currentChart) {
-                currentChart.destroy();
             }
-            
-            ctx.font = '16px Arial';
-            ctx.fillStyle = '#6c757d';
-            ctx.textAlign = 'center';
-            ctx.fillText('Tidak ada data untuk periode ini', ctx.canvas.width / 2, ctx.canvas.height / 2);
-        }
-        
-        // Scroll functions
-        function scrollToChart() {
-            document.getElementById('chartSection').scrollIntoView({ behavior: 'smooth' });
-        }
-        
-        function scrollToLatestPrices() {
-            document.getElementById('latestPricesSection').scrollIntoView({ behavior: 'smooth' });
-        }
-        
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            initChart();
         });
+    }
+
+    function processChartData(data) {
+        console.log('Processing chart data:', data);
         
-        // Toggle sidebar for mobile
-        function toggleSidebar() {
-            document.querySelector('.sidebar').classList.toggle('show');
+        // If data is already in the correct format (has labels and datasets)
+        if (data.labels && data.datasets) {
+            return data;
         }
         
-        // Auto-hide alerts
-        setTimeout(function() {
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(alert => {
-                if (alert.classList.contains('show')) {
-                    alert.classList.remove('show');
-                    setTimeout(() => alert.remove(), 150);
+        // If data is an array (single commodity data)
+        if (Array.isArray(data) && data.length > 0) {
+            // Extract unique dates and sort them
+            const dates = [...new Set(data.map(item => item.price_date))].sort();
+            
+            // Group data by commodity
+            const datasets = [];
+            const commodityMap = {};
+            
+            data.forEach(item => {
+                if (!commodityMap[item.commodity_name]) {
+                    commodityMap[item.commodity_name] = {
+                        label: `${item.commodity_name} (${item.unit || ''})`,
+                        data: new Array(dates.length).fill(null),
+                        borderColor: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    };
+                }
+                
+                const dateIndex = dates.indexOf(item.price_date);
+                if (dateIndex !== -1) {
+                    commodityMap[item.commodity_name].data[dateIndex] = parseFloat(item.avg_price);
                 }
             });
-        }, 5000);
+            
+            return {
+                labels: dates,
+                datasets: Object.values(commodityMap)
+            };
+        }
         
-        // Load AI Insight
-        function loadAIInsight(period = 'weekly') {
-            const container = document.getElementById('ai-insight-container');
-            container.innerHTML = `
-                <div class="text-center py-4">
+        // Return empty data if format is not recognized
+        return { labels: [], datasets: [] };
+    }
+
+    function showNoDataMessage(message = 'Tidak ada data yang tersedia untuk kriteria yang dipilih.') {
+        const noDataMessage = document.getElementById('noDataMessage');
+        const canvas = document.getElementById('chartHarga');
+        
+        if (noDataMessage) {
+            noDataMessage.classList.add('d-none');
+        }
+        
+        if (canvas) {
+            canvas.style.display = 'block';
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw message on canvas
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#666';
+            
+            // Split message into lines if needed
+            const maxWidth = canvas.width * 0.8; // 80% of canvas width
+            const lineHeight = 24;
+            const lines = [];
+            let currentLine = '';
+            const words = message.split(' ');
+            
+            words.forEach(word => {
+                const testLine = currentLine + word + ' ';
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && currentLine !== '') {
+                    lines.push(currentLine);
+                    currentLine = word + ' ';
+                } else {
+                    currentLine = testLine;
+                }
+            });
+            if (currentLine) lines.push(currentLine);
+            
+            // Draw each line
+            const startY = (canvas.height - (lines.length * lineHeight)) / 2;
+            lines.forEach((line, i) => {
+                ctx.fillText(line.trim(), canvas.width / 2, startY + (i * lineHeight));
+            });
+        }
+        
+        if (window.myChart) {
+            window.myChart.destroy();
+            window.myChart = null;
+        }
+    }
+
+    async function updateChart() {
+        const period = document.getElementById('periode')?.value || 7;
+        const commoditySelect = document.getElementById('commodity_id');
+        const commodityName = commoditySelect?.options[commoditySelect?.selectedIndex]?.text || 'komoditas yang dipilih';
+        const commodityId = commoditySelect?.value || 'all';
+        
+        console.log('Updating chart with:', { period, commodityId });
+        
+        const canvas = document.getElementById('chartHarga');
+        const noDataMessage = document.getElementById('noDataMessage');
+        
+        if (canvas) canvas.style.display = 'none';
+        if (noDataMessage) {
+            noDataMessage.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center py-4">
                     <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+                        <span class="visually-hidden">Memuat...</span>
                     </div>
-                    <p class="mt-2">Memuat analisis AI...</p>
+                    <p class="mt-2 mb-0">Sedang memuat data grafik...</p>
+                    <small class="text-muted">${commodityId === 'all' ? 'Semua komoditas' : commodityName}</small>
                 </div>
             `;
-            
-            fetch(`../ai_insight.php?period=${period}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        container.innerHTML = `
-                            <div class="ai-insight">
-                                ${data.insight}
-                                <div class="text-muted small mt-3">
-                                    <i class="bi bi-info-circle me-1"></i>
-                                    Analisis dibuat oleh AI pada ${new Date(data.generated_at).toLocaleString('id-ID')}
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        container.innerHTML = `
-                            <div class="alert alert-warning">
-                                <i class="bi bi-exclamation-triangle me-2"></i>
-                                ${data.message || 'Gagal memuat analisis AI. Silakan coba lagi nanti.'}
-                            </div>
-                        `;
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching AI insight:', error);
-                    container.innerHTML = `
-                        <div class="alert alert-danger">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            Terjadi kesalahan saat memuat analisis AI. Silakan coba lagi nanti.
-                        </div>
-                    `;
-                });
+            noDataMessage.classList.remove('d-none');
         }
         
-        // Initialize chart when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            createMonthlyTrendsChart();
-            loadAIInsight('<?= $aiInsightPeriod ?>');
-        });
-        
-        // Drag and drop for image upload
-        const uploadArea = document.querySelector('.upload-area');
-        
-        uploadArea.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            this.classList.add('dragover');
-        });
-        
-        uploadArea.addEventListener('dragleave', function(e) {
-            e.preventDefault();
-            this.classList.remove('dragover');
-        });
-        
-        uploadArea.addEventListener('drop', function(e) {
-            e.preventDefault();
-            this.classList.remove('dragover');
+        try {
+            const rawData = await fetchChartData(period, commodityId);
+            console.log('Raw data from server:', rawData);
             
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                document.getElementById('slider_image').files = files;
-                document.querySelector('form[enctype="multipart/form-data"]').submit();
+            if (!rawData || (Array.isArray(rawData) && rawData.length === 0)) {
+                showNoDataMessage(`Tidak ada data harga untuk ${commodityId === 'all' ? 'semua komoditas' : commodityName} dalam periode ini.`);
+                return;
             }
+            
+            // Process the data into the correct format
+            const processedData = processChartData(rawData);
+            console.log('Processed chart data:', processedData);
+            
+            if (!processedData || !processedData.labels || processedData.labels.length === 0 || 
+                !processedData.datasets || processedData.datasets.length === 0) {
+                showNoDataMessage(`Tidak ada data grafik yang valid untuk ${commodityId === 'all' ? 'semua komoditas' : commodityName}.`);
+                return;
+            }
+            
+            // Check if all data points are null/undefined
+            const hasValidData = processedData.datasets.some(dataset => 
+                dataset.data.some(value => value !== null && value !== undefined)
+            );
+            
+            if (!hasValidData) {
+                showNoDataMessage(`Data harga untuk ${commodityId === 'all' ? 'semua komoditas' : commodityName} tidak tersedia.`);
+                return;
+            }
+            
+            renderChart(processedData);
+            
+            if (canvas) {
+                canvas.style.display = 'block';
+            }
+            if (noDataMessage) {
+                noDataMessage.classList.add('d-none');
+            }
+            
+        } catch (error) {
+            console.error('Error updating chart:', error);
+            showNoDataMessage(error.message || 'Terjadi kesalahan saat memuat data grafik. Silakan coba lagi.');
+            if (window.myChart) {
+                window.myChart.destroy();
+                window.myChart = null;
+            }
+        }
+    }
+
+    // Sidebar toggle
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.querySelector('.sidebar-backdrop');
+    
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            sidebar.classList.toggle('show');
+            if (sidebarBackdrop) sidebarBackdrop.classList.toggle('show');
+            document.body.classList.toggle('sidebar-open');
         });
-    </script>
+    }
+    
+    if (sidebarBackdrop) {
+        sidebarBackdrop.addEventListener('click', function() {
+            sidebar.classList.remove('show');
+            sidebarBackdrop.classList.remove('show');
+            document.body.classList.remove('sidebar-open');
+        });
+    }
+    
+    document.addEventListener('click', function(event) {
+        if (sidebar && sidebarBackdrop) {
+            if (!event.target.closest('.sidebar') && !event.target.closest('#sidebarToggle')) {
+                sidebar.classList.remove('show');
+                sidebarBackdrop.classList.remove('show');
+                document.body.classList.remove('sidebar-open');
+            }
+        }
+    });
+
+    // Event listeners
+    const periodeSelect = document.getElementById('periode');
+    const commoditySelect = document.getElementById('commodity_id');
+    const btnTampil = document.getElementById('btnTampil');
+    const btnLinearScale = document.getElementById('btnLinearScale');
+    const btnLogScale = document.getElementById('btnLogScale');
+    const btnPrintChart = document.getElementById('btnPrintChart');
+    
+    if (periodeSelect) periodeSelect.addEventListener('change', updateChart);
+    if (commoditySelect) commoditySelect.addEventListener('change', updateChart);
+    if (btnTampil) btnTampil.addEventListener('click', updateChart);
+    if (btnLinearScale) btnLinearScale.addEventListener('click', () => { if (useLogScale) toggleScale(); });
+    if (btnLogScale) btnLogScale.addEventListener('click', () => { if (!useLogScale) toggleScale(); });
+    
+    if (btnPrintChart) {
+        btnPrintChart.addEventListener('click', function() {
+            const chartElement = document.getElementById('chartHarga');
+            if (!myChart || !chartElement) {
+                alert('Silakan tampilkan grafik terlebih dahulu dengan menekan tombol "Tampilkan"');
+                return;
+            }
+            
+            const printWindow = window.open('', '_blank');
+            const chartImage = chartElement.toDataURL('image/png');
+            const commoditySelect = document.getElementById('commodity_id');
+            const periodSelect = document.getElementById('periode');
+            const commodityName = commoditySelect?.options[commoditySelect.selectedIndex]?.text || 'Semua Komoditas';
+            const period = periodSelect?.options[periodSelect.selectedIndex]?.text || '7 Hari Terakhir';
+            
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                    <head>
+                        <title>Cetak Grafik Harga</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }
+                            .print-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+                            .print-header h2 { margin: 0 0 10px 0; color: #000080; }
+                            .print-header p { margin: 5px 0; color: #666; }
+                            .chart-container { text-align: center; margin: 20px 0; }
+                            img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; }
+                            .print-footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+                            @media print { body { padding: 0; } .print-header { border-color: #000; } }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="print-header">
+                            <h2>Laporan Harga Komoditas</h2>
+                            <p><strong>Komoditas:</strong> ${commodityName}</p>
+                            <p><strong>Periode:</strong> ${period}</p>
+                        </div>
+                        <div class="chart-container">
+                            <img src="${chartImage}" alt="Grafik Harga">
+                        </div>
+                        <div class="print-footer">
+                            <p>Dicetak pada: ${new Date().toLocaleString('id-ID', { 
+                                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })} WIB</p>
+                            <p>Sistem Informasi Harga Bahan Pokok - Bandar Lampung</p>
+                        </div>
+                        <script>
+                            window.onload = function() {
+                                setTimeout(function() { window.print(); }, 500);
+                            };
+                        <\/script>
+                    </body>
+                </html>
+            `);
+            printWindow.document.close();
+        });
+    }
+
+    // Initial load
+    updateChart();
+});
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 </body>
 </html>

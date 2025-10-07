@@ -1,0 +1,15 @@
+# File: .htaccess di root folder proyek (SIAGABAPOK\Siaga_bapok)
+
+<IfModule mod_rewrite.c>
+    # Aktifkan rewrite engine
+    RewriteEngine On
+    
+    # Atur base URL
+    # Ganti "SIAGABAPOK/Siaga_bapok" dengan nama folder proyek lo
+    RewriteBase /SIAGABAPOK/Siaga_bapok/public
+    
+    # Redirect semua permintaan ke folder public, kecuali file atau direktori yang ada
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>

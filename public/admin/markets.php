@@ -1,19 +1,24 @@
 <?php
-session_start();
+// Pastikan tidak ada output sebelum session_start()
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/../../src/models/Database.php';
+require_once __DIR__ . '/../../src/models/BaseModel.php';
 require_once __DIR__ . '/../../src/controllers/AuthController.php';
 require_once __DIR__ . '/../../src/models/Price.php';
-require_once __DIR__ . '/../../config/database.php';
-
-// Include sidebar based on user role
-if ($_SESSION['role'] === 'admin') {
-    include __DIR__ . '/sidebar_admin.php';
-} elseif ($_SESSION['role'] === 'uptd') {
-    include __DIR__ . '/sidebar_uptd.php';
-}
 
 $auth = new AuthController();
 $user = $auth->requireRole('admin');
-$db = new Database();
+$db = Database::getInstance();
+
+// Path to the consolidated sidebar file
+$sidebarPath = __DIR__ . '/includes/sidebar_admin.php'; 
+
+function sanitizeInput($data) {
+    return htmlspecialchars(strip_tags(trim($data)));
+}
 
 // Handle CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -64,6 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// Mulai output buffering
+ob_start();
+
 // Create markets table if not exists
 $createTableSql = "CREATE TABLE IF NOT EXISTS pasar (
     id_pasar INT PRIMARY KEY AUTO_INCREMENT,
@@ -100,6 +108,11 @@ if (!empty($_GET['edit'])) {
 }
 
 $pageTitle = 'Kelola Pasar - Admin Siaga Bapok';
+
+// Clear any previous output
+if (ob_get_level() > 0) {
+    ob_clean();
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -108,35 +121,51 @@ $pageTitle = 'Kelola Pasar - Admin Siaga Bapok';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $pageTitle; ?></title>
     
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="../../public/assets/images/BANDAR LAMPUNG ICON.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
     <style>
         :root {
-            --primary-green: #000080;
-            --light-green: #d4edda;
-            --dark-green: #3232b9ff;
+            --primary-blue: #000080;
+            --dark-blue: #3232b9ff;
             --sidebar-width: 250px;
+            --navbar-height: 56px;
         }
-        
+
         body {
             background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            padding-top: var(--navbar-height);
+            transition: margin 0.3s ease-in-out;
         }
-        
-        .sidebar {
+
+        .navbar {
+            height: var(--navbar-height);
             position: fixed;
             top: 0;
             left: 0;
-            height: 100vh;
-            width: var(--sidebar-width);
-            background: linear-gradient(180deg, var(--primary-green) 0%, var(--dark-green) 100%);
-            color: white;
-            z-index: 1000;
-            overflow-y: auto;
+            width: 100%;
+            z-index: 1030;
+            padding: 0.5rem 1rem;
         }
-        
+
+        .sidebar {
+            width: var(--sidebar-width);
+            height: calc(100vh - var(--navbar-height));
+            position: fixed;
+            left: 0;
+            top: var(--navbar-height);
+            z-index: 1020;
+            transition: transform 0.3s ease-in-out;
+            overflow-y: auto;
+            background: linear-gradient(180deg, var(--primary-blue) 0%, var(--dark-blue) 100%);
+            color: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+
         .sidebar .nav-link {
             color: rgba(255, 255, 255, 0.8);
             padding: 0.75rem 1rem;
@@ -144,132 +173,196 @@ $pageTitle = 'Kelola Pasar - Admin Siaga Bapok';
             margin: 0.25rem 0.5rem;
             transition: all 0.3s ease;
         }
-        
+
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
             background-color: rgba(255, 255, 255, 0.1);
             color: white;
         }
+
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            top: var(--navbar-height);
+            left: 0;
+            width: 100%;
+            height: calc(100% - var(--navbar-height));
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1010;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
         
+        .sidebar-backdrop.show {
+            display: block;
+            opacity: 1;
+        }
+
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 2rem;
+            transition: margin 0.3s ease-in-out;
         }
-        
+
         .card {
             border: none;
             box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
         }
-        
-        @media (max-width: 768px) {
+
+        @media (min-width: 992px) {
+            .sidebar {
+                transform: translateX(0) !important;
+            }
+            .main-content {
+                margin-left: var(--sidebar-width);
+            }
+            .sidebar-backdrop {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 991.98px) {
             .sidebar {
                 transform: translateX(-100%);
-                transition: transform 0.3s ease;
             }
-            
             .sidebar.show {
                 transform: translateX(0);
             }
-            
             .main-content {
                 margin-left: 0;
-                padding: 1rem;
+                width: 100%;
+            }
+            body.sidebar-open {
+                overflow: hidden;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Main Content -->
-    <div class="main-content">
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h1 class="h3 mb-0"><i class="bi bi-shop me-2"></i>Kelola Data Pasar</h1>
-                    <p class="mb-0 mt-2 opacity-75">Manajemen data pasar tradisional di Bandar Lampung</p>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container-fluid">
+            <button class="navbar-toggler" type="button" id="sidebarToggle" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle navigation">
+                <i class="bi bi-list" style="font-size: 1.5rem;"></i>
+            </button>
+            <a class="navbar-brand ms-2" href="#">Kelola Pasar</a>
+            <div class="ms-auto d-flex align-items-center">
+                <span class="text-white me-3 d-none d-sm-inline">
+                    <i class="bi bi-person-circle me-1"></i>
+                    <?php echo htmlspecialchars($user['username'] ?? 'Admin'); ?>
+                </span>
+                <a href="../logout.php" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+    
+    <?php include $sidebarPath; ?>
+
+    <main class="main-content">
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h1 class="h3 mb-0">
+                            <i class="bi bi-shop me-2"></i>
+                            Kelola Data Pasar
+                        </h1>
+                        <p class="mb-0 mt-2 opacity-75">
+                            Manajemen data pasar tradisional di Bandar Lampung
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
+        
+        <?php if (isset($_SESSION['success'])): ?>
+            <div class="alert alert-success alert-dismissible fade show">
+                <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_SESSION['error'])): ?>
+            <div class="alert alert-danger alert-dismissible fade show">
+                <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
 
-    <?php if (isset($_SESSION['success'])): ?>
-        <div class="alert alert-success alert-dismissible fade show"><?php echo $_SESSION['success']; unset($_SESSION['success']); ?></div>
-    <?php endif; ?>
-    <?php if (isset($_SESSION['error'])): ?>
-        <div class="alert alert-danger alert-dismissible fade show"><?php echo $_SESSION['error']; unset($_SESSION['error']); ?></div>
-    <?php endif; ?>
-
-    <div class="row">
-        <div class="col-lg-4 mb-4">
-            <div class="card">
-                <div class="card-header bg-primary text-white"><?php echo $editMarket ? 'Edit Pasar' : 'Tambah Pasar Baru'; ?></div>
-                <div class="card-body">
-                    <form method="POST">
-                        <input type="hidden" name="action" value="<?php echo $editMarket ? 'update' : 'create'; ?>">
-                        <?php if ($editMarket): ?>
-                            <input type="hidden" name="id_pasar" value="<?php echo $editMarket['id_pasar']; ?>">
-                        <?php endif; ?>
-                        <div class="mb-3">
-                            <label for="nama_pasar">Nama Pasar *</label>
-                            <input type="text" class="form-control" name="nama_pasar" value="<?php echo $editMarket['nama_pasar'] ?? ''; ?>" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="alamat">Alamat *</label>
-                            <textarea class="form-control" name="alamat" required><?php echo $editMarket['alamat'] ?? ''; ?></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="keterangan">Keterangan</label>
-                            <textarea class="form-control" name="keterangan"><?php echo $editMarket['keterangan'] ?? ''; ?></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-primary"><?php echo $editMarket ? 'Update' : 'Simpan'; ?></button>
-                        <?php if ($editMarket): ?>
-                            <a href="markets.php" class="btn btn-secondary">Batal</a>
-                        <?php endif; ?>
-                    </form>
+        <div class="row">
+            <div class="col-lg-4 mb-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white"><?php echo $editMarket ? 'Edit Pasar' : 'Tambah Pasar Baru'; ?></div>
+                    <div class="card-body">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="<?php echo $editMarket ? 'update' : 'create'; ?>">
+                            <?php if ($editMarket): ?>
+                                <input type="hidden" name="id_pasar" value="<?php echo $editMarket['id_pasar']; ?>">
+                            <?php endif; ?>
+                            <div class="mb-3">
+                                <label for="nama_pasar">Nama Pasar *</label>
+                                <input type="text" class="form-control" name="nama_pasar" value="<?php echo $editMarket['nama_pasar'] ?? ''; ?>" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="alamat">Alamat *</label>
+                                <textarea class="form-control" name="alamat" required><?php echo $editMarket['alamat'] ?? ''; ?></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="keterangan">Keterangan</label>
+                                <textarea class="form-control" name="keterangan"><?php echo $editMarket['keterangan'] ?? ''; ?></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-success"><i class="bi bi-save me-2"></i><?php echo $editMarket ? 'Update' : 'Simpan'; ?></button>
+                            <?php if ($editMarket): ?>
+                                <a href="markets.php" class="btn btn-secondary"><i class="bi bi-x-lg me-2"></i>Batal</a>
+                            <?php endif; ?>
+                        </form>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="col-lg-8 mb-4">
-            <div class="card">
-                <div class="card-header bg-info text-white d-flex justify-content-between">
-                    <span>Daftar Pasar (<?php echo $total; ?>)</span>
-                    <button class="btn btn-light btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Cetak</button>
-                </div>
-                <div class="card-body p-0">
-                    <?php if (!empty($markets)): ?>
-                        <div class="table-responsive">
-                            <table class="table table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>No</th>
-                                        <th>Nama Pasar</th>
-                                        <th>Alamat</th>
-                                        <th>Keterangan</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($markets as $index => $m): ?>
+            <div class="col-lg-8 mb-4">
+                <div class="card">
+                    <div class="card-header bg-info text-white d-flex justify-content-between">
+                        <span>Daftar Pasar (<?php echo $total; ?>)</span>
+                        <form method="get" class="d-flex">
+                            <input type="text" name="search" class="form-control form-control-sm me-2" placeholder="Cari pasar..." value="<?= htmlspecialchars($search); ?>">
+                            <button class="btn btn-light btn-sm" type="submit"><i class="bi bi-search"></i></button>
+                        </form>
+                    </div>
+                    <div class="card-body p-0">
+                        <?php if (!empty($markets)): ?>
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover mb-0">
+                                    <thead class="table-dark">
                                         <tr>
-                                            <td><?= $offset + $index + 1; ?></td>
-                                            <td><strong><?= htmlspecialchars($m['nama_pasar']); ?></strong></td>
-                                            <td><small><?= htmlspecialchars($m['alamat']); ?></small></td>
-                                            <td><small class="text-muted"><?= $m['keterangan'] ? htmlspecialchars($m['keterangan']) : '-'; ?></small></td>
-                                            <td>
-                                                <div class="btn-group btn-group-sm">
-                                                    <a href="?edit=<?= $m['id_pasar']; ?>" class="btn btn-warning btn-sm"><i class="bi bi-pencil"></i></a>
-                                                    <button type="button" class="btn btn-danger btn-sm"
-                                                            onclick="deleteMarket(<?= $m['id_pasar']; ?>, '<?= addslashes($m['nama_pasar']); ?>')">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
+                                            <th>No</th>
+                                            <th>Nama Pasar</th>
+                                            <th>Alamat</th>
+                                            <th>Keterangan</th>
+                                            <th width="15%">Aksi</th>
                                         </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        <!-- Pagination -->
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($markets as $index => $m): ?>
+                                            <tr>
+                                                <td><?= $offset + $index + 1; ?></td>
+                                                <td><strong><?= htmlspecialchars($m['nama_pasar']); ?></strong></td>
+                                                <td><small><?= htmlspecialchars($m['alamat']); ?></small></td>
+                                                <td><small class="text-muted"><?= $m['keterangan'] ? htmlspecialchars($m['keterangan']) : '-'; ?></small></td>
+                                                <td>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <a href="?edit=<?= $m['id_pasar']; ?>" class="btn btn-warning"><i class="bi bi-pencil"></i></a>
+                                                        <button type="button" class="btn btn-danger"
+                                                                onclick="deleteMarket(<?= $m['id_pasar']; ?>, '<?= addslashes($m['nama_pasar']); ?>')">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
                             <div class="d-flex flex-column flex-lg-row justify-content-center align-items-center gap-3 mt-3">
                                 <div class="text-muted">
                                     Menampilkan halaman <?= $page ?> dari <?= $pages ?>
@@ -286,11 +379,15 @@ $pageTitle = 'Kelola Pasar - Admin Siaga Bapok';
                                     </ul>
                                 </nav>
                             </div>
+                        <?php else: ?>
+                            <div class="p-3 text-center text-muted">Belum ada data pasar.</div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
+    </main>
 
-    <!-- Delete Modal -->
     <div class="modal fade" id="deleteModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -304,7 +401,7 @@ $pageTitle = 'Kelola Pasar - Admin Siaga Bapok';
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-lg me-1"></i>Batal</button>
-                    <form method="POST" style="display: inline;">
+                    <form method="POST" id="deleteForm" style="display: inline;">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id_pasar" id="deleteId">
                         <button type="submit" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Ya, Hapus</button>
@@ -313,53 +410,77 @@ $pageTitle = 'Kelola Pasar - Admin Siaga Bapok';
             </div>
         </div>
     </div>
-                    <?php else: ?>
-                        <div class="p-3">Belum ada data pasar</div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-    <!-- Bootstrap 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
     <script>
-        // Toggle sidebar for mobile
-        function toggleSidebar() {
-            document.querySelector('.sidebar').classList.toggle('show');
+        // Setup sidebar toggle
+        function setupSidebarToggle() {
+            const sidebar = document.getElementById('sidebar');
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            
+            if (!sidebar || !sidebarToggle) {
+                console.error("Sidebar or toggle button not found. Please check your HTML IDs.");
+                return;
+            }
+
+            let backdrop = document.querySelector('.sidebar-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.className = 'sidebar-backdrop';
+                document.body.appendChild(backdrop);
+            }
+            
+            const toggleSidebar = () => {
+                const isShown = sidebar.classList.toggle('show');
+                document.body.classList.toggle('sidebar-open');
+                
+                if (isShown) {
+                    backdrop.classList.add('show');
+                } else {
+                    backdrop.classList.remove('show');
+                }
+            };
+            
+            sidebarToggle.addEventListener('click', toggleSidebar);
+            backdrop.addEventListener('click', toggleSidebar);
+
+            window.addEventListener('resize', function() {
+                if (window.innerWidth >= 992) {
+                    sidebar.classList.remove('show');
+                    document.body.classList.remove('sidebar-open');
+                    backdrop.classList.remove('show');
+                }
+            });
         }
         
         // Delete market function
         function deleteMarket(id, name) {
             document.getElementById('deleteId').value = id;
             document.getElementById('nama_pasar').textContent = name;
-            new bootstrap.Modal(document.getElementById('deleteModal')).show();
+            const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+            deleteModal.show();
         }
-        
-        // Auto-hide alerts
-        setTimeout(function() {
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(alert => {
-                if (alert.classList.contains('show')) {
-                    alert.classList.remove('show');
-                    setTimeout(() => alert.remove(), 150);
-                }
-            });
-        }, 5000);
-        
-        // Form validation
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const namaParar = document.getElementById('nama_pasar').value.trim();
-            const alamat = document.getElementById('alamat').value.trim();
-            
-            if (!namaParar || !alamat) {
-                e.preventDefault();
-                alert('Nama pasar dan alamat harus diisi!');
-                return;
-            }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setupSidebarToggle();
+
+            // Auto-hide alerts
+            setTimeout(function() {
+                const alerts = document.querySelectorAll('.alert');
+                alerts.forEach(alert => {
+                    const bsAlert = bootstrap.Alert.getInstance(alert) || new bootstrap.Alert(alert);
+                    if (bsAlert) {
+                        bsAlert.close();
+                    }
+                });
+            }, 5000);
         });
     </script>
 </body>
 </html>
+<?php
+// Flush the output buffer
+ob_end_flush();
+?>

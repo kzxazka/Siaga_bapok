@@ -1,0 +1,65 @@
+/* File: public/css/responsive.css */
+@media (max-width: 768px) {
+    .table-responsive {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .btn {
+        padding: 0.375rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .form-control {
+        font-size: 1rem;
+        height: auto;
+    }
+
+    .row > .col-md-6, 
+    .row > .col-md-4,
+    .row > .col-md-8 {
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+}
+
+/* Untuk tabel yang lebih ramah di mobile */
+@media (max-width: 576px) {
+    table {
+        width: 100%;
+    }
+    
+    table, thead, tbody, th, td, tr {
+        display: block;
+    }
+    
+    thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+    }
+    
+    tr {
+        margin-bottom: 1rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    td {
+        border: none;
+        border-bottom: 1px solid #eee;
+        position: relative;
+        padding-left: 50%;
+    }
+    
+    td:before {
+        position: absolute;
+        left: 0.5rem;
+        width: 45%;
+        padding-right: 10px;
+        white-space: nowrap;
+        content: attr(data-label);
+        font-weight: bold;
+    }
+}
