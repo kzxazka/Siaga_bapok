@@ -1,7 +1,19 @@
 <?php
+// Aktifkan error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 session_start();
 if(session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+// Set lokasi log kustom
+ini_set('error_log', __DIR__ . '/../logs/error.log');
+
+// Buat direktori logs jika belum ada
+if (!file_exists(__DIR__ . '/../logs')) {
+    mkdir(__DIR__ . '/../logs', 0777, true);
 }
 
 require_once __DIR__ . '/../src/controllers/AuthController.php';
@@ -14,11 +26,35 @@ require_once __DIR__ . '/../src/models/Slider.php';
 require_once __DIR__ . '/../src/config/app.php';
 
 // Inisialisasi model
-$db = Database::getInstance();
-$auth = new AuthController();
-$priceModel = new Price();
-$settingsModel = new Settings();
-$sliderModel = new Slider();
+try {
+    $db = Database::getInstance();
+    
+    // Debug: Periksa koneksi database
+    $db->query("SELECT 1");
+    error_log("Koneksi database berhasil");
+    
+    // Debug: Periksa tabel prices
+    $pricesCount = $db->fetchOne("SELECT COUNT(*) as count FROM prices");
+    error_log("Jumlah data di tabel prices: " . $pricesCount['count']);
+    
+    // Debug: Periksa tabel commodities
+    $commoditiesCount = $db->fetchOne("SELECT COUNT(*) as count FROM commodities");
+    error_log("Jumlah data di tabel commodities: " . $commoditiesCount['count']);
+    
+    $auth = new AuthController();
+    $priceModel = new Price();
+    $settingsModel = new Settings();
+    $sliderModel = new Slider();
+    
+    // Debug: Periksa method getTopIncreasingPrices
+    $testResult = $priceModel->getTopIncreasingPrices(7, 2);
+    error_log("Hasil getTopIncreasingPrices: " . print_r($testResult, true));
+    
+} catch (Exception $e) {
+    error_log("Error in index.php: " . $e->getMessage());
+    error_log("Stack trace: " . $e->getTraceAsString());
+    die("Terjadi kesalahan. Silakan periksa log untuk detailnya.");
+}
 
 $currentUser = $auth->getCurrentUser();
 $role = $currentUser ? $currentUser['role'] : 'masyarakat';
@@ -33,11 +69,39 @@ $comparisonPeriod = in_array($comparisonPeriod, [1, 7, 30]) ? $comparisonPeriod 
 
 $uptdFilter = ($currentUser && $currentUser['role'] === 'uptd') ? $currentUser['id'] : null;
 
+// Dapatkan harga komoditas terbaru
+$latestCommodityPrices = $priceModel->getLatestCommodityPrices(12); // Ambil 12 komoditas terbaru
+
+// Debug: Tampilkan data komoditas
+if (empty($latestCommodityPrices)) {
+    error_log("Tidak ada data komoditas yang ditemukan");
+    // Cek apakah ada data di tabel commodities
+    $testCommodities = $db->fetchAll("SELECT * FROM commodities LIMIT 5");
+    error_log("Sample data from commodities table: " . print_r($testCommodities, true));
+    
+    // Cek apakah ada data di tabel prices
+    $testPrices = $db->fetchAll("SELECT * FROM prices ORDER BY created_at DESC LIMIT 5");
+    error_log("Sample data from prices table: " . print_r($testPrices, true));
+} else {
+    error_log("Data komoditas ditemukan: " . count($latestCommodityPrices) . " item");
+    error_log("Sample data: " . print_r(array_slice($latestCommodityPrices, 0, 1), true));
+}
+
 $commodityPriceComparison = $priceModel->getCommodityPriceComparison($referenceDate, $comparisonPeriod, $uptdFilter);
 $topIncreasing = $priceModel->getTopIncreasingPrices(7, 5);
 $topDecreasing = $priceModel->getTopDecreasingPrices(7, 5);
 $stablePrices = $priceModel->getStablePrices(7, 5);
 $stats = $priceModel->getStatistics();
+
+// Debug: Tampilkan isi variabel
+//echo '<div style="background: #f8f9fa; padding: 15px; margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px;">';
+//echo '<h4>Data Debug:</h4>';
+//echo '<pre>';
+//echo 'Top Increasing: ' . print_r($topIncreasing, true) . "\n\n";
+//echo 'Top Decreasing: ' . print_r($topDecreasing, true) . "\n\n";
+//echo 'Stable Prices: ' . print_r($stablePrices, true) . "\n\n";
+//echo '</pre>';
+// echo '</div>';
 
 $totalPasar = $db->fetchOne("SELECT COUNT(*) as count FROM pasar")['count'];
 $totalKomoditas = $db->fetchOne("SELECT COUNT(*) as count FROM commodities")['count'];
@@ -85,19 +149,23 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
 }
 ?>
 <!DOCTYPE html>
-<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $pageTitle; ?></title>
     
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="assets/css/trend-cards.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-    <link rel="icon" type="image/png" href="assets/images/<?= htmlspecialchars($settings['logo'] ?? 'BANDAR LAMPUNG ICON.png') ?>">
+    <link rel="icon" type="image/png" href="/Siaga_bapok/public/assets/images/<?= htmlspecialchars($settings['logo'] ?? 'BANDAR LAMPUNG ICON.png') ?>">
     
     <style>
         html { scroll-behavior: smooth; }
+{{ ... }}
         
         :root {
             --primary-blue: #000080;
@@ -106,7 +174,51 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
             --danger: #dc3545;
         }
 
-        body { background-color: #f8f9fa; }
+        body { 
+            background-color: #f8f9fa; 
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        
+        /* Card Hover Effects */
+        .card {
+            border-radius: 12px !important;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+        }
+        
+        .card:hover img {
+            transform: scale(1.05);
+        }
+        
+        /* Price Tag Styling */
+        .card .badge {
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            padding: 5px 10px;
+            border-radius: 6px;
+        }
+        
+        /* Responsive Image Container */
+        .card-img-container {
+            height: 180px;
+            overflow: hidden;
+            background: #f8f9fa;
+        }
+        
+        /* Truncate long text */
+        .text-truncate-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
 
         .navbar-custom {
             background: linear-gradient(135deg, var(--primary-blue) 0%, var(--dark-blue) 100%);
@@ -135,16 +247,149 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
             margin-bottom: 2rem;
         }
 
-        .trend-cards-container::{
+        .trend-cards-container {
             display: flex;
             overflow-x: auto;
             overflow-y: hidden;
-            gap: 1rem;
-            padding: 1rem 0;
+            gap: 1.5rem;
+            padding: 1rem 0.5rem;
             scroll-behavior: smooth;
             -webkit-overflow-scrolling: touch;
             scrollbar-width: thin;
-            scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+            scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
+            margin: 0 -0.5rem;
+        }
+        
+        .trend-cards-container > .d-flex {
+            padding: 0.5rem;
+            margin: -0.5rem 0;
+        }
+
+        /* Style untuk card tren harga */
+        .trend-card {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            border-radius: 0.75rem;
+            width: 280px;
+            flex: 0 0 auto;
+            background: white;
+            box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .trend-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1);
+            border-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        .trend-card .card {
+            border: 1px solid rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            border-radius: 0.75rem;
+        }
+        
+        .trend-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .trend-card:hover .card {
+            box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1) !important;
+            border-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        .trend-card .card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1.25rem;
+        }
+        
+        .trend-card .price-change {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-weight: 600;
+        }
+        
+        .trend-card .price-change.increase {
+            background-color: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+        
+        .trend-card .price-change.decrease {
+            background-color: rgba(25, 135, 84, 0.1);
+            color: #198754;
+        }
+        
+        .trend-card .price-change.stable {
+            background-color: rgba(13, 110, 253, 0.1);
+            color: #0d6efd;
+        }
+        
+        .trend-card .commodity-image {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 0.5rem;
+            transition: transform 0.3s ease;
+        }
+        
+        .trend-card .commodity-image-placeholder {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f8f9fa;
+            border-radius: 0.5rem;
+            color: #6c757d;
+            font-size: 1.5rem;
+        }
+        
+        .trend-card .commodity-name {
+            font-weight: 600;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+            color: #2c3e50;
+        }
+        
+        .trend-card .price-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-top: 0.5rem;
+        }
+        
+        .trend-card .price-diff {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .trend-card .unit-badge {
+            background-color: #f8f9fa;
+            color: #6c757d;
+            font-weight: 500;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            border: 1px solid #dee2e6;
+        }
+        
+        .trend-card .detail-btn {
+            border-radius: 0.5rem;
+            font-weight: 500;
+            padding: 0.375rem 1rem;
         }
 
         .trend-cards-container::-webkit-scrollbar {
@@ -194,15 +439,53 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
             opacity: 1;
         }
 
-        .prev-btn, .next-btn {
-            border-radius: 50%;
-            width: 36px;
-            height: 36px;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        /* Custom scrollbar for webkit browsers */
+    .commodity-carousel-container::-webkit-scrollbar {
+        height: 8px;
+    }
+    
+    .commodity-carousel-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    .commodity-carousel-container::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+    }
+    
+    .commodity-carousel-container::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    
+    /* Hide scrollbar for Firefox */
+    .commodity-carousel-container {
+        scrollbar-width: thin;
+        scrollbar-color: #888 #f1f1f1;
+        -ms-overflow-style: none;  /* IE and Edge */
+    }
+    
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .commodity-carousel-container {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+    }
+    
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .commodity-carousel-container::-webkit-scrollbar {
+        display: none;
+    }
+    
+    /* Navigation buttons */
+    #prevBtn, #nextBtn {
+        width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        padding: 0;
+    }
 
         .hover-shadow{
             transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -384,8 +667,142 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
         </div>
     </section>
 
+    <!-- Komoditas Terbaru Section -->
     <div class="container-fluid px-3 px-md-4 px-lg-5 my-4 my-lg-5">
-        <!-- Tren Harga Komoditas Section -->
+        <div class="card shadow-sm border-0 rounded-4 mb-5 overflow-hidden">
+            <div class="card-header bg-white border-0 py-3">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-center">
+                    <div class="mb-3 mb-md-0">
+                        <h2 class="h4 mb-1 fw-bold text-dark">
+                            <i class="bi bi-box-seam text-primary me-2"></i>Daftar Harga Komoditas Terbaru
+                        </h2>
+                        <p class="text-muted mb-0 small">Harga terkini komoditas pangan terupdate</p>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-outline-primary px-3 py-2" id="prevBtn">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <button class="btn btn-outline-primary px-3 py-2" id="nextBtn">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-body p-0">
+                <div class="position-relative">
+                    <div class="commodity-carousel-container" style="overflow: hidden;">
+                        <div class="commodity-carousel d-flex p-3" style="transition: transform 0.5s ease; width: max-content; gap: 1.25rem;">
+                            <?php 
+                            $displayItems = array_slice($latestCommodityPrices, 0, 12);
+                            if (!empty($displayItems)): 
+                                foreach ($displayItems as $item): 
+                                    $priceChange = isset($item['price_change']) ? (float)$item['price_change'] : 0;
+                                    $isPriceUp = $priceChange > 0;
+                                    $isPriceDown = $priceChange < 0;
+                            ?>
+                                <div class="commodity-card" style="width: 280px; flex-shrink: 0; transition: all 0.3s ease;">
+                                    <div class="card h-100 border-0 shadow-sm hover-shadow h-100" style="border-radius: 12px; overflow: hidden;">
+                                        <div style="height: 120px; overflow: hidden; position: relative; background: #f8f9fa;" class="d-flex align-items-center justify-content-center">
+                                            <?php if (!empty($item['image_path'])): ?>
+                                                <img src="/SIAGABAPOK/Siaga_bapok/public/uploads/commodities/<?php echo htmlspecialchars($item['image_path']); ?>" 
+                                                    class="img-fluid" 
+                                                    style="max-height: 100%; max-width: 100%; object-fit: contain; transition: all 0.3s ease;"
+                                                    onerror="this.onerror=null; this.src='data:image/svg+xml;charset=UTF-8,<svg width=\'100%\' height=\'100%\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'><rect width=\'100%\' height=\'100%\' fill=\'%23f8f9fa\'/><text x=\'50%\' y=\'50%\' font-family=\'sans-serif\' font-size=\'12\' text-anchor=\'middle\' dominant-baseline=\'middle\'>No Image</text></svg>';"
+                                                    alt="<?php echo htmlspecialchars($item['commodity_name']); ?>"
+                                                    onmouseover="this.style.transform='scale(1.05)'"
+                                                    onmouseout="this.style.transform='scale(1)'">
+                                            <?php else: ?>
+                                                <div class="d-flex align-items-center justify-content-center h-100 w-100">
+                                                    <i class="bi bi-image text-muted" style="font-size: 2rem;"></i>
+                                                </div>
+                                            <?php endif; ?>
+                                            
+                                            <?php if ($isPriceUp || $isPriceDown): ?>
+                                                <span class="position-absolute top-2 end-2 badge <?php echo $isPriceUp ? 'bg-danger bg-opacity-10 text-danger' : 'bg-success bg-opacity-10 text-success'; ?> px-2 py-1 rounded-pill fw-medium small">
+                                                    <i class="bi <?php echo $isPriceUp ? 'bi-arrow-up' : 'bi-arrow-down'; ?> me-1"></i>
+                                                    <?php echo abs($priceChange); ?>% (7 hari)
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
+                                        
+                                        <div class="card-body p-4">
+                                            <div class="mb-2">
+                                                <h5 class="card-title mb-1 fw-semibold text-dark" style="font-size: 1.05rem;" title="<?php echo htmlspecialchars($item['commodity_name']); ?>">
+                                                    <?php echo htmlspecialchars($item['commodity_name']); ?>
+                                                </h5>
+                                                <p class="text-muted small mb-0"><?php echo htmlspecialchars($item['unit']); ?></p>
+                                            </div>
+                                            
+                                            <div class="mt-3 pt-2 border-top">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <p class="text-muted small mb-1">Harga</p>
+                                                        <h4 class="text-primary fw-bold mb-0">
+                                                            Rp<?php echo number_format($item['latest_price'], 0, ',', '.'); ?>
+                                                        </h4>
+                                                    </div>
+                                                    <div class="text-end">
+                                                        <p class="text-muted small mb-1">Perubahan 7 Hari</p>
+                                                        <span class="badge <?php echo $isPriceUp ? 'bg-danger bg-opacity-10 text-danger' : ($isPriceDown ? 'bg-success bg-opacity-10 text-success' : 'bg-light text-muted'); ?> px-2 py-1">
+                                                            <?php 
+                                                            if ($priceChange > 0) {
+                                                                echo '<i class="bi bi-arrow-up me-1"></i>';
+                                                            } elseif ($priceChange < 0) {
+                                                                echo '<i class="bi bi-arrow-down me-1"></i>';
+                                                            } else {
+                                                                echo '<i class="bi bi-dash me-1"></i>';
+                                                            }
+                                                            echo abs($priceChange) . '%';
+                                                            ?>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="mt-3">
+                                                <a href="/SIAGABAPOK/Siaga_bapok/public/commodity/<?php echo $item['id']; ?>" class="btn btn-sm btn-outline-primary w-100">
+                                                    <i class="bi bi-eye me-1"></i> Lihat Detail
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php 
+                                endforeach; 
+                            else: 
+                            ?>
+                                <div class="col-12 text-center py-5">
+                                    <div class="py-4">
+                                        <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                                        <p class="text-muted mt-3 mb-0">Belum ada data harga komoditas yang tersedia.</p>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-footer bg-white border-0 py-3">
+                <div class="d-flex justify-content-center">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-primary px-4 py-2" id="viewAllBtn">
+                            <i class="bi bi-grid me-2"></i>Lihat Semua Komoditas
+                        </button>
+                        <button class="btn btn-primary px-4 py-2" id="compareBtn">
+                            <i class="bi bi-graph-up me-2"></i>Bandingkan Harga
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tren Harga Komoditas Section
+    <div class="container-fluid px-3 px-md-4 px-lg-5 my-4 my-lg-5">
         <div class="card shadow-sm border-0 rounded-3 mb-5">
             <div class="card-body p-3 p-md-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3">
@@ -411,20 +828,20 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
                     </div>
                 </div>
 
-                <!-- Scroll Indicator -->
+                < Scroll Indicator
                 <div class="scroll-indicator mb-2 d-none d-md-block">
                     <div class="progress" style="height: 4px;">
                         <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                     </div>
                 </div>
                 
-                <!-- Horizontal Scrollable Cards -->
-                <div class="trend-cards-container mb-3" 
-                    style="overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 10px;"
+                < Horizontal Scrollable Cards 
+                <div class="trend-cards-container mb-4" 
+                    style="overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 1rem;"
                     id="trendCardsContainer">
-                    <div class="d-flex flex-nowrap gap-3" style="min-width: max-content; padding-bottom: 5px;">
+                    <div class="d-flex flex-nowrap gap-4" style="min-width: max-content; padding-bottom: 1rem;">
                     
-                    <!-- Meningkat -->
+                    Meningkat
                     <?php if (!empty($topIncreasing)): ?>
                         <?php foreach ($topIncreasing as $item): ?>
                             <?php 
@@ -433,65 +850,63 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
                             $formattedPrice = 'Rp' . number_format($item['current_avg'], 0, ',', '.');
                             $formattedDiff = ($priceDiff >= 0 ? '+' : '') . number_format($priceDiff, 0, ',', '.');
                             ?>
-                            <div class="trend-card" style="width: 280px; flex: 0 0 auto;">
-                            <div class="card h-100 border-0 shadow-sm h-100 hover-shadow transition-all">
-                                <div class="card-body p-3">
-                                    <div class="d-flex align-items-start mb-3">
-                                        <div class="flex-shrink-0">
-                                            <?php if (!empty($item['image'])): ?>
-                                                <img src="<?= htmlspecialchars($item['image']) ?>" 
-                                                     alt="<?= htmlspecialchars($item['commodity_name']) ?>" 
-                                                     class="rounded" 
-                                                     style="width: 60px; height: 60px; object-fit: cover;">
-                                            <?php else: ?>
-                                                <div class="bg-light rounded d-flex align-items-center justify-content-center" 
-                                                     style="width: 60px; height: 60px;">
-                                                    <i class="bi bi-box-seam text-muted" style="font-size: 1.5rem;"></i>
+                            <div class="trend-card">
+                                <div class="card h-100 border-0">
+                                    <div class="card-body p-4">
+                                        <div class="d-flex align-items-start mb-3">
+                                            <div class="flex-shrink-0 me-3">
+                                                <?php if (!empty($item['image'])): ?>
+                                                    <img src="<?= htmlspecialchars($item['image']) ?>" 
+                                                         alt="<?= htmlspecialchars($item['commodity_name']) ?>" 
+                                                         class="commodity-image">
+                                                <?php else: ?>
+                                                    <div class="commodity-image-placeholder">
+                                                        <i class="bi bi-box-seam"></i>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="flex-grow-1">
+                                                <h5 class="commodity-name mb-1" title="<?= htmlspecialchars($item['commodity_name']) ?>">
+                                                    <?= htmlspecialchars($item['commodity_name']) ?>
+                                                </h5>
+                                                <div class="d-flex align-items-center mb-2">
+                                                    <span class="badge bg-light text-muted border-0 px-2 py-1">
+                                                        <?= htmlspecialchars($item['unit']) ?>
+                                                    </span>
                                                 </div>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="flex-grow-1 ms-3">
-                                            <h6 class="mb-1 fw-bold text-truncate" 
-                                                style="max-width: 150px;" 
-                                                title="<?= htmlspecialchars($item['commodity_name']) ?>"
-                                                data-bs-toggle="tooltip" 
-                                                data-bs-placement="top">
-                                                <?= htmlspecialchars($item['commodity_name']) ?>
-                                            </h6>
-                                            <span class="badge bg-danger bg-opacity-10 text-danger d-inline-flex align-items-center">
-                                                <i class="bi bi-arrow-up me-1"></i> 
-                                                Naik <?= number_format($percentage, 1) ?>%
-                                            </span>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <div>
-                                            <span class="text-muted small">Harga Sekarang</span>
-                                            <div class="fw-bold"><?= $formattedPrice ?></div>
-                                        </div>
-                                        <div class="text-end">
-                                            <span class="text-muted small">Perubahan</span>
-                                            <div class="fw-bold text-danger">
-                                                <?= $formattedDiff ?>
+                                                <span class="badge bg-danger bg-opacity-10 text-danger px-2 py-1">
+                                                    <i class="bi bi-arrow-up me-1"></i>
+                                                    Naik <?= number_format(abs($percentage), 1) ?>%
+                                                </span>
                                             </div>
                                         </div>
-                                    </div>
-                                    
-                                    <div class="d-flex align-items-center justify-content-between">
-                                        <span class="text-muted small"><?= $item['unit'] ?></span>
-                                        <a href="detail-komoditas.php?id=<?= $item['id'] ?>" 
-                                           class="btn btn-sm btn-outline-primary">
-                                            <i class="bi bi-arrow-right me-1"></i> Detail
-                                        </a>
+                                        
+                                        <div class="mt-3 pt-3 border-top">
+                                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                                <div>
+                                                    <div class="text-muted small mb-1">Harga Sekarang</div>
+                                                    <div class="price-value"><?= $formattedPrice ?></div>
+                                                </div>
+                                                <div class="text-end">
+                                                    <div class="text-muted small mb-1">Perubahan</div>
+                                                    <div class="price-diff text-danger fw-bold">
+                                                        <?= $formattedDiff ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <a href="detail-komoditas.php?id=<?= $item['id'] ?>" 
+                                               class="btn btn-sm btn-outline-primary w-100">
+                                                <i class="bi bi-arrow-right me-1"></i> Lihat Detail
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
                         <?php endforeach; ?>
                     <?php endif; ?>
 
-                    <!-- Menurun -->
+                     < Menurun 
                     <?php if (!empty($topDecreasing)): ?>
                         <?php foreach ($topDecreasing as $item): ?>
                             <?php 
@@ -536,7 +951,7 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
                         <?php endforeach; ?>
                     <?php endif; ?>
 
-                    <!-- Stabil -->
+                     Stabil
                     <?php if (!empty($stablePrices)): ?>
                         <?php foreach ($stablePrices as $item): ?>
                             <div class="trend-card">
@@ -595,7 +1010,7 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
         </div>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Monitoring Harga Section -->
     <div class="container-fluid px-3 px-md-4 px-lg-5 mb-5">
@@ -754,95 +1169,316 @@ if (isset($_GET['api']) && $_GET['api'] === 'commodity-prices') {
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
+// Enhanced Carousel Functionality
 document.addEventListener('DOMContentLoaded', function() {
-    const container = document.getElementById('trendCardsContainer');
-    if (!container) return;
-
-    const scrollContent = container.firstElementChild;
-    const prevBtn = document.querySelector('.prev-btn');
-    const nextBtn = document.querySelector('.next-btn');
-    const progressBar = document.querySelector('.progress-bar');
+    // Initialize carousel if element exists
+    const carousel = document.querySelector('.commodity-carousel');
+    const carouselContainer = document.querySelector('.commodity-carousel-container');
     
-    if (!scrollContent || !prevBtn || !nextBtn || !progressBar) {
-        console.warn('Salah satu elemen tidak ditemukan');
-        return;
-    }
-
-    let scrollPosition = 0;
-    const cardWidth = 280; // Sesuaikan dengan lebar card + gap
-    const gap = 16; // Sesuaikan dengan gap yang digunakan
-    
-    // Inisialisasi tooltip
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-    
-    // Fungsi untuk update tombol navigasi
-    function updateNavButtons() {
-        prevBtn.disabled = scrollPosition <= 0;
-        nextBtn.disabled = scrollPosition >= (scrollContent.scrollWidth - container.clientWidth);
+    if (carousel && carouselContainer) {
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const items = Array.from(carousel.children);
         
-        // Update progress bar
-        const maxScroll = scrollContent.scrollWidth - container.clientWidth;
-        const progress = (scrollPosition / maxScroll) * 100;
-        progressBar.style.width = `${progress}%`;
+        if (items.length === 0) return;
+        
+        // Calculate item width including margin
+        const itemStyle = window.getComputedStyle(items[0]);
+        const itemWidth = items[0].offsetWidth + 
+                         parseFloat(itemStyle.marginRight) + 
+                         parseFloat(itemStyle.marginLeft);
+        
+        let currentPosition = 0;
+        let isAnimating = false;
+        let startX, scrollLeft, isDragging = false;
+        let animationId;
+        
+        // Calculate how many items can fit in the viewport
+        function calculateItemsPerView() {
+            const containerWidth = carouselContainer.offsetWidth;
+            return Math.min(Math.floor(containerWidth / itemWidth), 4);
+        }
+        
+        let itemsPerView = calculateItemsPerView();
+        let maxPosition = Math.max(0, items.length - itemsPerView);
+        let startPos = 0;
+        let currentTranslate = 0;
+        let prevTranslate = 0;
+        
+        // Touch event handlers for mobile
+        carousel.addEventListener('touchstart', touchStart);
+        carousel.addEventListener('touchend', touchEnd);
+        carousel.addEventListener('touchmove', touchMove);
+        
+        // Mouse event handlers for desktop
+        carousel.addEventListener('mousedown', touchStart);
+        carousel.addEventListener('mouseup', touchEnd);
+        carousel.addEventListener('mouseleave', touchEnd);
+        carousel.addEventListener('mousemove', touchMove);
+        
+        function touchStart(e) {
+            if (e.type === 'touchstart') {
+                startPos = e.touches[0].clientX;
+            } else {
+                startPos = e.clientX;
+                e.preventDefault();
+            }
+            
+            isDragging = true;
+            carousel.style.cursor = 'grabbing';
+            carousel.style.transition = 'none';
+            
+            // Clear any existing animation frame
+            cancelAnimationFrame(animationId);
+        }
+        
+        function touchMove(e) {
+            if (!isDragging) return;
+            
+            const currentPosition = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+            const diff = currentPosition - startPos;
+            
+            // Prevent carousel from bouncing when dragging past boundaries
+            if ((currentPosition < startPos && currentTranslate <= -maxPosition * itemWidth) || 
+                (currentPosition > startPos && currentTranslate >= 0)) {
+                return;
+            }
+            
+            currentTranslate = prevTranslate + diff;
+            carousel.style.transform = `translateX(${currentTranslate}px)`;
+        }
+        
+        function touchEnd() {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            carousel.style.cursor = 'grab';
+            
+            // Calculate the closest slide based on the current position
+            const threshold = itemWidth / 4;
+            const draggedSlides = Math.round(-currentTranslate / itemWidth);
+            
+            // Snap to the closest slide
+            currentPosition = Math.min(Math.max(0, draggedSlides), maxPosition);
+            
+            // Update the carousel position with smooth animation
+            updateCarousel();
+        }
+        
+        // Update carousel position with smooth animation
+        function updateCarousel(instant = false) {
+            if (isAnimating && !instant) return;
+            
+            isAnimating = true;
+            
+            // Ensure position is within bounds
+            currentPosition = Math.min(Math.max(0, currentPosition), maxPosition);
+            
+            // Calculate new position
+            const newPosition = -currentPosition * itemWidth;
+            
+            if (instant) {
+                carousel.style.transition = 'none';
+                carousel.style.transform = `translateX(${newPosition}px)`;
+                // Force reflow
+                void carousel.offsetWidth;
+                carousel.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+            } else {
+                carousel.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+                carousel.style.transform = `translateX(${newPosition}px)`;
+            }
+            
+            // Update prevTranslate for touch events
+            prevTranslate = newPosition;
+            
+            // Update button states
+            updateButtonStates();
+            
+            // Reset animation flag after transition ends
+            carousel.addEventListener('transitionend', function onEnd() {
+                isAnimating = false;
+                carousel.removeEventListener('transitionend', onEnd);
+            }, { once: true });
+        }
+        
+        // Update button states based on current position
+        function updateButtonStates() {
+            if (!prevBtn || !nextBtn) return;
+            
+            prevBtn.disabled = currentPosition === 0;
+            nextBtn.disabled = currentPosition >= maxPosition;
+            
+            // Visual feedback
+            prevBtn.style.opacity = currentPosition === 0 ? '0.5' : '1';
+            nextBtn.style.opacity = currentPosition >= maxPosition ? '0.5' : '1';
+            
+            // Disable pointer events when button is disabled
+            prevBtn.style.pointerEvents = currentPosition === 0 ? 'none' : 'auto';
+            nextBtn.style.pointerEvents = currentPosition >= maxPosition ? 'none' : 'auto';
+        }
+        
+        // Navigation functions
+        function goToNext() {
+            if (currentPosition < maxPosition) {
+                currentPosition++;
+                updateCarousel();
+            }
+        }
+        
+        function goToPrev() {
+            if (currentPosition > 0) {
+                currentPosition--;
+                updateCarousel();
+            }
+        }
+        
+        // Event Listeners for navigation buttons
+        if (prevBtn) prevBtn.addEventListener('click', goToPrev);
+        if (nextBtn) nextBtn.addEventListener('click', goToNext);
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+            
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                goToPrev();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                goToNext();
+            }
+        });
+        
+        // Touch and drag support
+        carouselContainer.addEventListener('mousedown', startDrag);
+        carouselContainer.addEventListener('touchstart', startDrag, { passive: false });
+        
+        function startDrag(e) {
+            if (isAnimating) return;
+            
+            isDragging = true;
+            startX = (e.pageX || e.touches[0].pageX) - carousel.offsetLeft;
+            scrollLeft = -parseInt(carousel.style.transform.replace('translateX(', '').replace('px)', '')) || 0;
+            
+            carousel.style.cursor = 'grabbing';
+            carousel.style.transition = 'none';
+            
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('touchmove', drag, { passive: false });
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('touchend', endDrag);
+            
+            e.preventDefault();
+        }
+        
+        function drag(e) {
+            if (!isDragging) return;
+            
+            const x = (e.pageX || e.touches[0].pageX) - carousel.offsetLeft;
+            const walk = (x - startX) * 1.5; // Adjust sensitivity
+            
+            // Calculate new position with boundaries
+            const newScroll = Math.max(-maxPosition * itemWidth, Math.min(scrollLeft - walk, 0));
+            
+            carousel.style.transform = `translateX(${newScroll}px)`;
+            
+            // Prevent page scroll when dragging
+            if (e.cancelable) {
+                e.preventDefault();
+            }
+        }
+        
+        function endDrag(e) {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            carousel.style.cursor = 'grab';
+            
+            // Calculate new position based on drag end
+            const currentTransform = window.getComputedStyle(carousel).transform;
+            const matrix = new DOMMatrixReadOnly(currentTransform);
+            const currentScroll = -matrix.m41; // Get current translateX value
+            
+            // Snap to nearest item
+            currentPosition = Math.round(currentScroll / itemWidth);
+            
+            // Ensure position is within bounds
+            currentPosition = Math.max(0, Math.min(currentPosition, maxPosition));
+            
+            // Update carousel to snapped position
+            updateCarousel();
+            
+            // Remove event listeners
+            document.removeEventListener('mousemove', drag);
+            document.removeEventListener('touchmove', drag);
+            document.removeEventListener('mouseup', endDrag);
+            document.removeEventListener('touchend', endDrag);
+        }
+        
+        // Handle window resize
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                const newItemsPerView = calculateItemsPerView();
+                if (newItemsPerView !== itemsPerView) {
+                    itemsPerView = newItemsPerView;
+                    maxPosition = Math.max(0, items.length - itemsPerView);
+                    currentPosition = Math.min(currentPosition, maxPosition);
+                    updateCarousel(true);
+                }
+            }, 100);
+        });
+        
+        // Initialize carousel
+        updateCarousel(true);
+        
+        // Add CSS for better touch feedback
+        const style = document.createElement('style');
+        style.textContent = `
+            .commodity-carousel {
+                cursor: grab;
+                user-select: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+            }
+            
+            .commodity-carousel:active {
+                cursor: grabbing;
+            }
+            
+            .commodity-carousel-container {
+                overflow: hidden;
+                position: relative;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            .commodity-carousel-container::-webkit-scrollbar {
+                display: none;
+            }
+            
+            #prevBtn, #nextBtn {
+                transition: opacity 0.2s ease;
+            }
+            
+            #prevBtn:disabled, #nextBtn:disabled {
+                cursor: not-allowed;
+                opacity: 0.5 !important;
+            }
+        `;
+        document.head.appendChild(style);
     }
-    
-    // Event listener untuk tombol navigasi
-    prevBtn.addEventListener('click', () => {
-        scrollPosition = Math.max(0, scrollPosition - (cardWidth + gap));
-        container.scrollTo({
-            left: scrollPosition,
-            behavior: 'smooth'
-        });
-    });
-    
-    nextBtn.addEventListener('click', () => {
-        const maxScroll = scrollContent.scrollWidth - container.clientWidth;
-        scrollPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
-        container.scrollTo({
-            left: scrollPosition,
-            behavior: 'smooth'
-        });
-    });
-    
-    // Update tombol saat scroll
-    container.addEventListener('scroll', () => {
-        scrollPosition = container.scrollLeft;
-        updateNavButtons();
-    });
-    
-    // Inisialisasi awal
-    updateNavButtons();
-    
-    // Handle resize
-    let resizeTimer;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            updateNavButtons();
-        }, 250);
-    });
-    
-    // Tambahkan class saat hover card
-    document.querySelectorAll('.trend-card .card').forEach(card => {
-        card.addEventListener('mouseenter', function() {
-            this.classList.add('shadow');
-        });
-        card.addEventListener('mouseleave', function() {
-            this.classList.remove('shadow');
-        });
-    });
+
+    // Initialize other components
+    initializeCommoditySparklines();
+    initTrendCardsScroll();
 });
-// Pass PHP data to JavaScript
-const commodities = <?= json_encode($commodities) ?>;
-const commodityPriceComparison = <?= json_encode($commodityPriceComparison) ?>;
 
 // Initialize sparkline charts for table
 function initializeCommoditySparklines() {
@@ -870,19 +1506,13 @@ function initializeCommoditySparklines() {
                 },
                 options: {
                     responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        x: { display: false },
-                        y: { display: false }
-                    }
+                    plugins: { legend: { display: false } },
+                    scales: { x: { display: false }, y: { display: false } }
                 }
             });
         } else {
-            canvas.closest('td').textContent = 'Tidak ada data';
+            const td = canvas.closest('td');
+            if (td) td.textContent = 'Tidak ada data';
         }
     });
 }
@@ -890,252 +1520,452 @@ function initializeCommoditySparklines() {
 // Initialize horizontal scroll for trend cards
 function initTrendCardsScroll() {
     const container = document.querySelector('.trend-cards-container');
+    if (!container) return;
+
+    const scrollContent = container.firstElementChild;
     const prevBtn = document.querySelector('.prev-btn');
     const nextBtn = document.querySelector('.next-btn');
+    const progressBar = document.querySelector('.progress-bar');
     
-    if (!container || !prevBtn || !nextBtn) return;
-    
-    const scrollAmount = 300;
-    
-    prevBtn.addEventListener('click', () => {
-        container.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
-    });
-    
-    nextBtn.addEventListener('click', () => {
-        container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    });
-    
-    // Update nav buttons visibility
-    const updateNavButtons = () => {
-        prevBtn.style.visibility = container.scrollLeft > 0 ? 'visible' : 'hidden';
-        nextBtn.style.visibility = 
-            container.scrollLeft < (container.scrollWidth - container.clientWidth - 10) ? 'visible' : 'hidden';
-    };
-    
-    container.addEventListener('scroll', updateNavButtons);
-    window.addEventListener('resize', updateNavButtons);
-    updateNavButtons();
-}
+    if (!scrollContent || !prevBtn || !nextBtn || !progressBar) return;
 
-// Update table with AJAX
-function updateCommodityTable(data) {
-    const tbody = document.querySelector('#commodityPriceTable tbody');
-    if (!tbody) return;
-
-    tbody.innerHTML = '';
-
-    if (data.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center py-5">
-                    <i class="bi bi-inbox fs-1 text-muted"></i>
-                    <p class="mt-3">Tidak ada data harga yang tersedia</p>
-                </td>
-            </tr>
-        `;
-        return;
+    let scrollPosition = 0;
+    const cardWidth = 280;
+    const gap = 16;
+    
+    function updateNavButtons() {
+        const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+        prevBtn.disabled = scrollPosition <= 0;
+        nextBtn.disabled = scrollPosition >= maxScroll;
+        const progress = (scrollPosition / (maxScroll || 1)) * 100;
+        progressBar.style.width = `${progress}%`;
     }
-
-    data.forEach((item, index) => {
-        const change = item.percentage_change !== null ? parseFloat(item.percentage_change) : null;
-        const changeClass = change > 0 ? 'text-danger' : (change < 0 ? 'text-success' : 'text-muted');
-        const changeIcon = change > 0 ? 'bi-arrow-up' : (change < 0 ? 'bi-arrow-down' : 'bi-dash');
-        const priceDiff = item.selected_date_price - item.comparison_date_price;
+    
+    if (prevBtn && nextBtn) {
+        prevBtn.addEventListener('click', () => {
+            scrollPosition = Math.max(0, scrollPosition - (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
         
-        const row = document.createElement('tr');
-        row.className = 'text-center';
-        row.innerHTML = `
-            <td class="text-start ps-4">
-                <div class="d-flex align-items-center">
-                    ${item.image ? `<img src="${item.image}" alt="${item.commodity_name}" class="rounded me-2" style="width: 40px; height: 40px; object-fit: cover;">` : ''}
-                    <span>${item.commodity_name}</span>
-                </div>
-            </td>
-            <td>${item.unit || '-'}</td>
-            <td class="fw-bold">${formatCurrency(item.selected_date_price)}</td>
-            <td>${item.comparison_date_price ? formatCurrency(item.comparison_date_price) : '-'}</td>
-            <td class="${changeClass}">
-                ${change !== null ? `
-                    <div class="d-flex align-items-center justify-content-center">
-                        <i class="bi ${changeIcon} me-1"></i>
-                        ${Math.abs(change).toFixed(2)}%
-                        <small class="text-muted ms-2">(${formatCurrency(Math.abs(priceDiff))})</small>
-                    </div>
-                ` : '-'}
-            </td>
-            <td>
-                <canvas id="sparkline-${item.id}" 
-                        data-chart-data='${JSON.stringify(item.chart_data_formatted || [])}'
-                        width="100" height="30"></canvas>
-            </td>
-        `;
-        tbody.appendChild(row);
-    });
-
-    // Inisialisasi ulang sparkline setelah update tabel
-    setTimeout(initializeCommoditySparklines, 100);
-}
-
-// Fungsi untuk memformat mata uang
-function formatCurrency(amount) {
-    if (amount === null || amount === undefined) return '-';
-    return new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount);
-}
-
-// Fungsi untuk memuat data komoditas
-function loadCommodityData() {
-    const selectedDate = document.getElementById('selectedDatePicker').value;
-    const comparisonPeriod = document.getElementById('comparisonSelect').value;
-    
-    // Tampilkan loading state
-    const tbody = document.querySelector('#commodityPriceTable tbody');
-    if (tbody) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Memuat...</span>
-                    </div>
-                    <p class="mt-2">Memuat data...</p>
-                </td>
-            </tr>
-        `;
-    }
-
-    // Kirim permintaan AJAX
-    fetch(`?api=commodity-prices&date=${selectedDate}&comparison=${comparisonPeriod}`)
-        .then(async response => {
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('application/json')) {
-                const text = await response.text();
-                console.error('Expected JSON, got:', text);
-                throw new Error('Respon tidak valid dari server');
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                updateCommodityTable(data.data);
-            } else {
-                throw new Error(data.message || 'Terjadi kesalahan saat memuat data');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            // Tampilkan pesan error ke pengguna
-            if (tbody) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="6" class="text-center text-danger py-4">
-                            <i class="bi bi-exclamation-triangle-fill"></i>
-                            <p class="mt-2">${error.message || 'Gagal memuat data. Silakan coba lagi.'}</p>
-                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadCommodityData()">
-                                <i class="bi bi-arrow-clockwise"></i> Coba Lagi
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }
+        nextBtn.addEventListener('click', () => {
+            const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+            scrollPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
         });
     }
-
-// Fungsi untuk mengekspor ke Excel
-function exportToExcel() {
-    try {
-        // Dapatkan parameter filter
-        const selectedDate = document.getElementById('selectedDatePicker').value;
-        const comparisonPeriod = document.getElementById('comparisonSelect').value;
-        
-        // Redirect ke endpoint ekspor
-        window.location.href = `/export/commodity-prices?date=${selectedDate}&comparison=${comparisonPeriod}&format=excel`;
-    } catch (error) {
-        console.error('Export error:', error);
-        alert('Gagal mengekspor data. Silakan coba lagi.');
-    }
-}
-
-// Fungsi untuk mengekspor ke PDF
-function exportToPDF() {
-    try {
-        // Dapatkan parameter filter
-        const selectedDate = document.getElementById('selectedDatePicker').value;
-        const comparisonPeriod = document.getElementById('comparisonSelect').value;
-        
-        // Redirect ke endpoint ekspor PDF
-        window.location.href = `/export/commodity-prices?date=${selectedDate}&comparison=${comparisonPeriod}&format=pdf`;
-    } catch (error) {
-        console.error('PDF export error:', error);
-        alert('Gagal membuat PDF. Silakan coba lagi.');
-    }
-}
-
-// Initialize everything
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize sparklines
-    initializeCommoditySparklines();
     
-    // Initialize trend cards
-    initTrendCardsScroll();
-    
-    // Animate trend cards on view
-    const trendCards = document.querySelectorAll('.trend-card');
-    trendCards.forEach((card, index) => {
-        setTimeout(() => {
-            card.classList.add('visible');
-        }, index * 100);
-    });
-    const datePicker = document.getElementById('selectedDatePicker');
-    if (datePicker) {
-        datePicker.max = new Date().toISOString().split('T')[0];
-        datePicker.addEventListener('change', updateCommodityTable);
-    }
-    
-    // Tambahkan di dalam event listener DOMContentLoaded
-    document.getElementById('selectedDatePicker').addEventListener('change', function() {
-        const date = new Date(this.value);
-        document.getElementById('currentDateDisplay').textContent = date.toLocaleDateString('id-ID', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
+    if (container) {
+        container.addEventListener('scroll', () => {
+            scrollPosition = container.scrollLeft;
+            updateNavButtons();
         });
-    });
-
-    document.getElementById('comparisonSelect').addEventListener('change', function() {
-        document.getElementById('comparisonDateDisplay').textContent = `(H-${this.value})`;
-    });
-
-    // Event listeners
-    const comparisonSelect = document.getElementById('comparisonSelect');
-    
-    if (comparisonSelect) {
-        comparisonSelect.addEventListener('change', loadCommodityData);
     }
     
-    // Inisialisasi tooltip
+    // Initialize tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
+    tooltipTriggerList.forEach(tooltipTriggerEl => {
+        new bootstrap.Tooltip(tooltipTriggerEl);
     });
+    
+    // Initial update
+    updateNavButtons();
+    
+    // Handle resize
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(updateNavButtons, 250);
+    });
+}
 
-    //muat data awal
-    loadCommodityData();
-});
-
-// Handle browser back/forward
+// Handle popstate for back/forward navigation
 window.addEventListener('popstate', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const date = urlParams.get('date');
     const comparison = urlParams.get('comparison');
     
     if (date && comparison) {
-        document.getElementById('selectedDatePicker').value = date;
-        document.getElementById('comparisonSelect').value = comparison;
-        updateCommodityTable();
+        const datePicker = document.getElementById('selectedDatePicker');
+        const comparisonSelect = document.getElementById('comparisonSelect');
+        if (datePicker && comparisonSelect) {
+            datePicker.value = date;
+            comparisonSelect.value = comparison;
+            if (typeof updateCommodityTable === 'function') {
+                updateCommodityTable();
+            }
+        }
+    }
+});
+</script>
+</body>
+</html>
+            new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        data: prices,
+                        borderColor: '#0d6efd',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { display: false }, y: { display: false } }
+                }
+            });
+        } else {
+            const td = canvas.closest('td');
+            if (td) td.textContent = 'Tidak ada data';
+        }
+    });
+}
+
+// Initialize horizontal scroll for trend cards
+function initTrendCardsScroll() {
+    const container = document.querySelector('.trend-cards-container');
+    if (!container) return;
+
+    const scrollContent = container.firstElementChild;
+    const prevBtn = document.querySelector('.prev-btn');
+    const nextBtn = document.querySelector('.next-btn');
+    const progressBar = document.querySelector('.progress-bar');
+    
+    if (!scrollContent || !prevBtn || !nextBtn || !progressBar) return;
+
+    let scrollPosition = 0;
+    const cardWidth = 280;
+    const gap = 16;
+    
+    function updateNavButtons() {
+        const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+        prevBtn.disabled = scrollPosition <= 0;
+        nextBtn.disabled = scrollPosition >= maxScroll;
+        const progress = (scrollPosition / (maxScroll || 1)) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+    
+    if (prevBtn && nextBtn) {
+        prevBtn.addEventListener('click', () => {
+            scrollPosition = Math.max(0, scrollPosition - (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
+        
+        nextBtn.addEventListener('click', () => {
+            const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+            scrollPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
+    }
+    
+    if (container) {
+        container.addEventListener('scroll', () => {
+            scrollPosition = container.scrollLeft;
+            updateNavButtons();
+        });
+    }
+    
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(tooltipTriggerEl => {
+        new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Initial update
+    updateNavButtons();
+    
+    // Handle resize
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(updateNavButtons, 250);
+    });
+}
+
+// Handle popstate for back/forward navigation
+window.addEventListener('popstate', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const date = urlParams.get('date');
+    const comparison = urlParams.get('comparison');
+    
+    if (date && comparison) {
+        const datePicker = document.getElementById('selectedDatePicker');
+        const comparisonSelect = document.getElementById('comparisonSelect');
+        if (datePicker && comparisonSelect) {
+            datePicker.value = date;
+            comparisonSelect.value = comparison;
+            if (typeof updateCommodityTable === 'function') {
+                updateCommodityTable();
+            }
+        }
+    }
+});
+</script>
+</body>
+</html>
+                cursor: grab;
+                user-select: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+            }
+            
+            .commodity-carousel:active {
+                cursor: grabbing;
+            }
+            
+            .commodity-carousel-container {
+                overflow: hidden;
+                position: relative;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            .commodity-carousel-container::-webkit-scrollbar {
+                display: none;
+            }
+            
+            #prevBtn, #nextBtn {
+                transition: opacity 0.2s ease;
+            }
+            
+            #prevBtn:disabled, #nextBtn:disabled {
+                cursor: not-allowed;
+                opacity: 0.5 !important;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Initialize other components
+    initializeCommoditySparklines();
+    initTrendCardsScroll();
+});
+
+// Initialize sparkline charts for table
+function initializeCommoditySparklines() {
+    const sparklineCanvases = document.querySelectorAll('[id^="sparkline-"]');
+    
+    sparklineCanvases.forEach(canvas => {
+        const commodityId = canvas.id.replace('sparkline-', '');
+        const chartData = JSON.parse(canvas.dataset.chartData || '[]');
+        
+        if (chartData.length > 0) {
+            const dates = chartData.map(item => item.date);
+            const prices = chartData.map(item => parseFloat(item.price));
+            
+            new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        data: prices,
+                        borderColor: '#0d6efd',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { display: false }, y: { display: false } }
+                }
+            });
+        } else {
+            const td = canvas.closest('td');
+            if (td) td.textContent = 'Tidak ada data';
+        }
+    });
+}
+
+// Initialize horizontal scroll for trend cards
+function initTrendCardsScroll() {
+    const container = document.querySelector('.trend-cards-container');
+    if (!container) return;
+
+    const scrollContent = container.firstElementChild;
+    const prevBtn = document.querySelector('.prev-btn');
+    const nextBtn = document.querySelector('.next-btn');
+    const progressBar = document.querySelector('.progress-bar');
+    
+    if (!scrollContent || !prevBtn || !nextBtn || !progressBar) return;
+
+    let scrollPosition = 0;
+    const cardWidth = 280;
+    const gap = 16;
+    
+    function updateNavButtons() {
+        const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+        prevBtn.disabled = scrollPosition <= 0;
+        nextBtn.disabled = scrollPosition >= maxScroll;
+        const progress = (scrollPosition / (maxScroll || 1)) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+    
+    if (prevBtn && nextBtn) {
+        prevBtn.addEventListener('click', () => {
+            scrollPosition = Math.max(0, scrollPosition - (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
+        
+        nextBtn.addEventListener('click', () => {
+            const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+            scrollPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
+    }
+    
+    if (container) {
+        container.addEventListener('scroll', () => {
+            scrollPosition = container.scrollLeft;
+            updateNavButtons();
+        });
+    }
+    
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(tooltipTriggerEl => {
+        new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Initial update
+    updateNavButtons();
+    
+    // Handle resize
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(updateNavButtons, 250);
+    });
+}
+
+// Handle popstate for back/forward navigation
+window.addEventListener('popstate', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const date = urlParams.get('date');
+    const comparison = urlParams.get('comparison');
+    
+    if (date && comparison) {
+        const datePicker = document.getElementById('selectedDatePicker');
+        const comparisonSelect = document.getElementById('comparisonSelect');
+        if (datePicker && comparisonSelect) {
+            datePicker.value = date;
+            comparisonSelect.value = comparison;
+            if (typeof updateCommodityTable === 'function') {
+                updateCommodityTable();
+            }
+        }
+    }
+});
+</script>
+</body>
+</html>
+            
+            new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        data: prices,
+                        borderColor: '#0d6efd',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { display: false }, y: { display: false } }
+                }
+            });
+        } else {
+            const td = canvas.closest('td');
+            if (td) td.textContent = 'Tidak ada data';
+        }
+    });
+}
+
+// Initialize horizontal scroll for trend cards
+function initTrendCardsScroll() {
+    const container = document.querySelector('.trend-cards-container');
+    if (!container) return;
+
+    const scrollContent = container.firstElementChild;
+    const prevBtn = document.querySelector('.prev-btn');
+    const nextBtn = document.querySelector('.next-btn');
+    const progressBar = document.querySelector('.progress-bar');
+    
+    if (!scrollContent || !prevBtn || !nextBtn || !progressBar) return;
+
+    let scrollPosition = 0;
+    const cardWidth = 280;
+    const gap = 16;
+    
+    function updateNavButtons() {
+        const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+        prevBtn.disabled = scrollPosition <= 0;
+        nextBtn.disabled = scrollPosition >= maxScroll;
+        const progress = (scrollPosition / (maxScroll || 1)) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+    
+    if (prevBtn && nextBtn) {
+        prevBtn.addEventListener('click', () => {
+            scrollPosition = Math.max(0, scrollPosition - (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
+        
+        nextBtn.addEventListener('click', () => {
+            const maxScroll = scrollContent.scrollWidth - container.clientWidth;
+            scrollPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
+            container.scrollTo({ left: scrollPosition, behavior: 'smooth' });
+        });
+    }
+    
+    if (container) {
+        container.addEventListener('scroll', () => {
+            scrollPosition = container.scrollLeft;
+            updateNavButtons();
+        });
+    }
+    
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(tooltipTriggerEl => {
+        new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Initial update
+    updateNavButtons();
+    
+    // Handle resize
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(updateNavButtons, 250);
+    });
+}
+
+// Handle popstate for back/forward navigation
+window.addEventListener('popstate', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const date = urlParams.get('date');
+    const comparison = urlParams.get('comparison');
+    
+    if (date && comparison) {
+        const datePicker = document.getElementById('selectedDatePicker');
+        const comparisonSelect = document.getElementById('comparisonSelect');
+        if (datePicker && comparisonSelect) {
+            datePicker.value = date;
+            comparisonSelect.value = comparison;
+            if (typeof updateCommodityTable === 'function') {
+                updateCommodityTable();
+            }
+        }
     }
 });
 </script>

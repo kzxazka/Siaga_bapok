@@ -364,30 +364,41 @@ class Price extends BaseModel {
         try {
             $sql = "SELECT 
                         c.id, c.name AS commodity_name, c.unit, c.image,
-                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :days1 DAY) THEN p.price END) as current_avg,
-                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :days2 DAY) 
-                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :days3 DAY) THEN p.price END) as previous_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
+                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
                         COUNT(*) as data_count
                     FROM {$this->table} p
                     JOIN commodities c ON p.commodity_id = c.id
                     WHERE p.status = 'approved' 
-                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :days4 DAY)
+                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :total_days DAY)
                     GROUP BY c.id, c.name, c.unit, c.image
-                    HAVING current_avg IS NOT NULL AND previous_avg IS NOT NULL
+                    HAVING current_avg IS NOT NULL 
+                    AND previous_avg IS NOT NULL
+                    AND previous_avg > 0
                     AND (current_avg - previous_avg) / previous_avg > 0.01
                     ORDER BY (current_avg - previous_avg) / previous_avg DESC
                     LIMIT :limit";
             
             $params = [
-                ':days1' => $days,
-                ':days2' => $days * 2,
-                ':days3' => $days,
-                ':days4' => $days * 2,
+                ':current_days' => $days,
+                ':prev_start_day' => $days,
+                ':prev_end_day' => $days * 2,
+                ':total_days' => $days * 2,
                 ':limit' => (int)$limit
             ];
             
+            // Log query and params for debugging
+            error_log("getTopIncreasingPrices SQL: " . $sql);
+            error_log("getTopIncreasingPrices Params: " . print_r($params, true));
+            
             $stmt = $this->query($sql, $params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Log result count for debugging
+            error_log("getTopIncreasingPrices found " . count($result) . " results");
+            
+            return $result;
         } catch (Exception $e) {
             error_log("Error getting top increasing prices: " . $e->getMessage());
             return [];
@@ -398,30 +409,41 @@ class Price extends BaseModel {
         try {
             $sql = "SELECT 
                         c.id, c.name AS commodity_name, c.unit, c.image,
-                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :days1 DAY) THEN p.price END) as current_avg,
-                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :days2 DAY) 
-                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :days3 DAY) THEN p.price END) as previous_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
+                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
                         COUNT(*) as data_count
                     FROM {$this->table} p
                     JOIN commodities c ON p.commodity_id = c.id
                     WHERE p.status = 'approved' 
-                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :days4 DAY)
+                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :total_days DAY)
                     GROUP BY c.id, c.name, c.unit, c.image
-                    HAVING current_avg IS NOT NULL AND previous_avg IS NOT NULL
+                    HAVING current_avg IS NOT NULL 
+                    AND previous_avg IS NOT NULL
+                    AND previous_avg > 0
                     AND (current_avg - previous_avg) / previous_avg < -0.01
                     ORDER BY (current_avg - previous_avg) / previous_avg ASC
                     LIMIT :limit";
             
             $params = [
-                ':days1' => $days,
-                ':days2' => $days * 2,
-                ':days3' => $days,
-                ':days4' => $days * 2,
+                ':current_days' => $days,
+                ':prev_start_day' => $days,
+                ':prev_end_day' => $days * 2,
+                ':total_days' => $days * 2,
                 ':limit' => (int)$limit
             ];
             
+            // Log query and params for debugging
+            error_log("getTopDecreasingPrices SQL: " . $sql);
+            error_log("getTopDecreasingPrices Params: " . print_r($params, true));
+            
             $stmt = $this->query($sql, $params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Log result count for debugging
+            error_log("getTopDecreasingPrices found " . count($result) . " results");
+            
+            return $result;
         } catch (Exception $e) {
             error_log("Error getting top decreasing prices: " . $e->getMessage());
             return [];
@@ -431,31 +453,42 @@ class Price extends BaseModel {
     public function getStablePrices($days = 7, $limit = 5) {
         try {
             $sql = "SELECT 
-                        c.id, c.name AS commodity_name, c.unit, c.image,
-                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :days1 DAY) THEN p.price END) as current_avg,
-                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :days2 DAY) 
-                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :days3 DAY) THEN p.price END) as previous_avg,
+                        c.id, c.name AS commodity_name, c.unit, c.image_path as image,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
+                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
                         COUNT(*) as data_count
                     FROM {$this->table} p
                     JOIN commodities c ON p.commodity_id = c.id
                     WHERE p.status = 'approved' 
-                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :days4 DAY)
-                    GROUP BY c.id, c.name, c.unit, c.image
-                    HAVING current_avg IS NOT NULL AND previous_avg IS NOT NULL
+                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :total_days DAY)
+                    GROUP BY c.id, c.name, c.unit
+                    HAVING current_avg IS NOT NULL 
+                    AND previous_avg IS NOT NULL
+                    AND previous_avg > 0
                     AND ABS((current_avg - previous_avg) / previous_avg) <= 0.01
                     ORDER BY ABS((current_avg - previous_avg) / previous_avg) ASC
                     LIMIT :limit";
             
             $params = [
-                ':days1' => $days,
-                ':days2' => $days * 2,
-                ':days3' => $days,
-                ':days4' => $days * 2,
+                ':current_days' => $days,
+                ':prev_start_day' => $days,
+                ':prev_end_day' => $days * 2,
+                ':total_days' => $days * 2,
                 ':limit' => (int)$limit
             ];
             
+            // Log query and params for debugging
+            error_log("getStablePrices SQL: " . $sql);
+            error_log("getStablePrices Params: " . print_r($params, true));
+            
             $stmt = $this->query($sql, $params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Log result count for debugging
+            error_log("getStablePrices found " . count($result) . " results");
+            
+            return $result;
         } catch (Exception $e) {
             error_log("Error getting stable prices: " . $e->getMessage());
             return [];
@@ -559,6 +592,51 @@ class Price extends BaseModel {
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             error_log("Error searching prices: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    public function getLatestCommodityPrices($limit = 12) {
+        try {
+            // First, get the latest approved price for each commodity
+            $sql = "SELECT 
+                        c.id, 
+                        c.name AS commodity_name, 
+                        c.unit,
+                        c.image_path,
+                        (
+                            SELECT p1.price 
+                            FROM prices p1 
+                            WHERE p1.commodity_id = c.id 
+                            AND p1.status = 'approved'
+                            ORDER BY p1.created_at DESC 
+                            LIMIT 1
+                        ) as latest_price,
+                        (
+                            SELECT p1.created_at 
+                            FROM prices p1 
+                            WHERE p1.commodity_id = c.id 
+                            AND p1.status = 'approved'
+                            ORDER BY p1.created_at DESC 
+                            LIMIT 1
+                        ) as created_at
+                    FROM commodities c
+                    HAVING latest_price IS NOT NULL
+                    ORDER BY c.name ASC
+                    LIMIT :limit";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Log the results for debugging
+            error_log("Latest commodity prices query results: " . print_r($results, true));
+            
+            return $results;
+        } catch (Exception $e) {
+            error_log("Error getting latest commodity prices: " . $e->getMessage());
             return [];
         }
     }
