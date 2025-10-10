@@ -408,7 +408,7 @@ class Price extends BaseModel {
     public function getTopDecreasingPrices($days = 7, $limit = 5) {
         try {
             $sql = "SELECT 
-                        c.id, c.name AS commodity_name, c.unit, c.image,
+                        c.id, c.name AS commodity_name, c.unit, c.image_path as image,
                         AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
                         AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
                                 AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
@@ -796,12 +796,15 @@ class Price extends BaseModel {
     public function getCommodityPriceComparison($selectedDate, $comparisonDays, $uptdId = null) {
         try {
             $comparisonDate = date('Y-m-d', strtotime("$selectedDate - $comparisonDays days"));
+            $startDate = date('Y-m-d', strtotime("$comparisonDate - 7 days")); // Get 7 days before comparison date for chart data
             
+            // First, get the basic price comparison data
             $sql = "SELECT 
                         c.id,
                         c.name AS commodity_name,
                         c.unit,
                         c.chart_color,
+                        c.image_path,
                         (SELECT AVG(p.price)
                          FROM prices p
                          WHERE p.commodity_id = c.id
@@ -839,7 +842,31 @@ class Price extends BaseModel {
             $stmt->execute($params);
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Process results
+            // Get price history for each commodity for the chart
+            $priceHistorySql = "SELECT 
+                c.id as commodity_id,
+                DATE(p.created_at) as date,
+                AVG(p.price) as avg_price
+                FROM commodities c
+                JOIN prices p ON p.commodity_id = c.id
+                WHERE p.status = 'approved'
+                AND DATE(p.created_at) BETWEEN :start_date AND :selected_date
+                " . ($uptdId ? " AND p.uptd_user_id = :uptd_id" : "") . "
+                GROUP BY c.id, DATE(p.created_at)
+                ORDER BY c.id, DATE(p.created_at)";
+                
+            $historyStmt = $this->db->prepare($priceHistorySql);
+            $historyParams = [
+                ':start_date' => $startDate,
+                ':selected_date' => $selectedDate
+            ];
+            if ($uptdId) {
+                $historyParams[':uptd_id'] = $uptdId;
+            }
+            $historyStmt->execute($historyParams);
+            $priceHistory = $historyStmt->fetchAll(PDO::FETCH_GROUP | PDO::FETCH_ASSOC);
+            
+            // Process results and add chart data
             foreach ($results as &$item) {
                 $item['selected_date_price'] = $item['selected_date_price'] !== null ? 
                     (float)$item['selected_date_price'] : null;
@@ -853,6 +880,17 @@ class Price extends BaseModel {
                                                $item['comparison_date_price']) * 100;
                 } else {
                     $item['percentage_change'] = null;
+                }
+                
+                // Add chart data if available
+                $item['chart_data_formatted'] = [];
+                if (isset($priceHistory[$item['id']])) {
+                    foreach ($priceHistory[$item['id']] as $history) {
+                        $item['chart_data_formatted'][] = [
+                            'date' => $history['date'],
+                            'price' => (float)$history['avg_price']
+                        ];
+                    }
                 }
             }
             
