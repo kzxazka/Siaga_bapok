@@ -49078,3 +49078,86 @@ Stack trace:
 )
 
 [10-Oct-2025 10:48:19 UTC] getStablePrices found 0 results
+[10-Oct-2025 16:39:53 UTC] getTopIncreasingPrices SQL: SELECT 
+                        c.id, c.name AS commodity_name, c.unit, c.image,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
+                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
+                        COUNT(*) as data_count
+                    FROM prices p
+                    JOIN commodities c ON p.commodity_id = c.id
+                    WHERE p.status = 'approved' 
+                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :total_days DAY)
+                    GROUP BY c.id, c.name, c.unit, c.image
+                    HAVING current_avg IS NOT NULL 
+                    AND previous_avg IS NOT NULL
+                    AND previous_avg > 0
+                    AND (current_avg - previous_avg) / previous_avg > 0.01
+                    ORDER BY (current_avg - previous_avg) / previous_avg DESC
+                    LIMIT :limit
+[10-Oct-2025 16:39:53 UTC] getTopIncreasingPrices Params: Array
+(
+    [:current_days] => 7
+    [:prev_start_day] => 7
+    [:prev_end_day] => 14
+    [:total_days] => 14
+    [:limit] => 5
+)
+
+[10-Oct-2025 16:39:53 UTC] Database error in Price::query: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'c.image' in 'field list'
+[10-Oct-2025 16:39:53 UTC] Error getting top increasing prices: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'c.image' in 'field list'
+[10-Oct-2025 16:39:53 UTC] getTopDecreasingPrices SQL: SELECT 
+                        c.id, c.name AS commodity_name, c.unit, c.image_path as image,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
+                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
+                        COUNT(*) as data_count
+                    FROM prices p
+                    JOIN commodities c ON p.commodity_id = c.id
+                    WHERE p.status = 'approved' 
+                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :total_days DAY)
+                    GROUP BY c.id, c.name, c.unit, c.image
+                    HAVING current_avg IS NOT NULL 
+                    AND previous_avg IS NOT NULL
+                    AND previous_avg > 0
+                    AND (current_avg - previous_avg) / previous_avg < -0.01
+                    ORDER BY (current_avg - previous_avg) / previous_avg ASC
+                    LIMIT :limit
+[10-Oct-2025 16:39:53 UTC] getTopDecreasingPrices Params: Array
+(
+    [:current_days] => 7
+    [:prev_start_day] => 7
+    [:prev_end_day] => 14
+    [:total_days] => 14
+    [:limit] => 5
+)
+
+[10-Oct-2025 16:39:53 UTC] Database error in Price::query: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'c.image' in 'group statement'
+[10-Oct-2025 16:39:53 UTC] Error getting top decreasing prices: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'c.image' in 'group statement'
+[10-Oct-2025 16:39:53 UTC] getStablePrices SQL: SELECT 
+                        c.id, c.name AS commodity_name, c.unit, c.image_path as image,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :current_days DAY) THEN p.price END) as current_avg,
+                        AVG(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL :prev_end_day DAY) 
+                                AND p.created_at < DATE_SUB(NOW(), INTERVAL :prev_start_day DAY) THEN p.price END) as previous_avg,
+                        COUNT(*) as data_count
+                    FROM prices p
+                    JOIN commodities c ON p.commodity_id = c.id
+                    WHERE p.status = 'approved' 
+                    AND p.created_at >= DATE_SUB(NOW(), INTERVAL :total_days DAY)
+                    GROUP BY c.id, c.name, c.unit
+                    HAVING current_avg IS NOT NULL 
+                    AND previous_avg IS NOT NULL
+                    AND previous_avg > 0
+                    AND ABS((current_avg - previous_avg) / previous_avg) <= 0.01
+                    ORDER BY ABS((current_avg - previous_avg) / previous_avg) ASC
+                    LIMIT :limit
+[10-Oct-2025 16:39:53 UTC] getStablePrices Params: Array
+(
+    [:current_days] => 7
+    [:prev_start_day] => 7
+    [:prev_end_day] => 14
+    [:total_days] => 14
+    [:limit] => 5
+)
+
+[10-Oct-2025 16:39:53 UTC] getStablePrices found 0 results
